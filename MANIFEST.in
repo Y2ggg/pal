@@ -1,0 +1,10 @@
+recursive-include tests *.py
+recursive-include tests/browser *.js
+prune tests/manual
+include LICENSE CONTRIBUTING.md SECURITY.md CHANGELOG.md THIRD-PARTY-NOTICES.md
+include uv.lock
+include docs/QUICKSTART.md docs/USER-GUIDE.md docs/MAINTENANCE.md docs/PRODUCT.md docs/ARCHITECTURE.md
+include docs/RELEASING.md docs/RELEASE-NOTES.md docs/images/console.png
+include docs/brand/pal-wordmark.svg
+include docs/brand/pal-wordmark-light.svg
+include docs/brand/pal-icon.svg

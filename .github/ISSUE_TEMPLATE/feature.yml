@@ -1,0 +1,17 @@
+name: 功能建议
+description: 说明要解决的使用问题
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 遇到了什么问题
+      description: 请描述具体使用场景，以及当前流程哪里不够用。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的行为
+      description: 如涉及产品边界变化，请说明与 docs/PRODUCT.md 当前范围的差异。
+    validations:
+      required: true
