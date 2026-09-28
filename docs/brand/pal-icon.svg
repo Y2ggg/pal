@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title">
+  <title id="title">PAL 图标</title>
+  <rect width="64" height="64" rx="17" fill="#233d38"/>
+  <path d="M19 49V29C19 21.7 23.7 17 31 17S43 21.7 43 29 38.3 41 31 41 19 36.3 19 29" stroke="#edf3dc" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
