@@ -23,7 +23,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-  "jsonschema>=4.23,<5",
+  "jsonschema>=4.26.0,<5",
   "markdown-it-py>=3,<5",
 ]
 
