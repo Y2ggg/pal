@@ -15,7 +15,9 @@ from __future__ import annotations
 import errno
 import ipaddress
 import json
+import os
 import secrets
+import socket
 import webbrowser
 from http import HTTPStatus
 from http.client import HTTPConnection, HTTPException
@@ -705,7 +707,12 @@ def _status(root: Path, config_root: Path) -> dict[str, Any]:
 
 class _WebServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(self, address: tuple[str, int], library_root: Path, config_root: Path) -> None:
         super().__init__(address, _WebHandler)

@@ -6,6 +6,7 @@
 
 - 增加原生 Windows 文件锁、路径校验、UTF-8 持久写入、进程检查和 CLI 启动适配。
 - 提供 Windows x64、macOS Apple Silicon/Intel、Linux x64 的独立运行包及用户级安装/卸载脚本。
+- Windows 控制台独占监听端口，重复启动复用现有服务；安装器校验原安装后才升级或卸载。
 - 新建库使用 portable-1 路径 schema 标识；原 v1 schema 与旧投影按原字节读取，不原地升级。
 - 系统创建入口更新为 `0.3.0+native.8`，补充 PowerShell 临时目录、路径引用和 UTF-8 写入规则。
 - 程序版本、系统入口修订、库协议各自管理；正式发布标签和资产不覆盖。

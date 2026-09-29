@@ -9,7 +9,7 @@ on:
         description: 验证范围（仅打包变更可复用相同源码的全量结果）
         type: choice
         default: all
-        options: [all, test, bundle, probe]
+        options: [all, test, bundle]
 
 env:
   PYTHONUTF8: "1"
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   test:
-    if: github.event_name != 'workflow_dispatch' || (inputs.scope != 'bundle' && inputs.scope != 'probe')
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'bundle'
     name: ${{ matrix.os }} / Python ${{ matrix.python }} / ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
@@ -61,7 +61,7 @@ jobs:
       - run: uv build
 
   bundle:
-    if: github.event_name != 'workflow_dispatch' || (inputs.scope != 'test' && inputs.scope != 'probe')
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'test'
     name: 安装包 / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -85,35 +85,3 @@ jobs:
           name: pal-${{ matrix.os }}
           path: dist/bundles/*
           if-no-files-found: error
-
-  probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'probe'
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
-        with:
-          python-version: '3.11.15'
-          version: '0.11.9'
-      - run: uv sync --locked
-      - shell: python
-        run: |
-          import subprocess
-          code = '''
-          from pathlib import Path
-          from pal.web import _WebServer
-          first = _WebServer(('127.0.0.1', 0), Path.cwd(), Path.cwd())
-          try:
-              try:
-                  second = _WebServer(first.server_address, Path.cwd(), Path.cwd())
-              except OSError as exc:
-                  print('SECOND_BIND_REJECTED', exc.errno, exc.winerror, flush=True)
-              else:
-                  print('SECOND_BIND_ACCEPTED', first.server_address, flush=True)
-                  second.server_close()
-          finally:
-              first.server_close()
-          '''
-          import textwrap
-          subprocess.run(['uv', 'run', 'python', '-c', textwrap.dedent(code)], check=True, timeout=30)

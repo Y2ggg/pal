@@ -1,7 +1,9 @@
 """Native platform behavior and old library compatibility (ACC-001/011/012)."""
 
+import errno
 import json
 import os
+import socket
 import subprocess
 import sys
 
@@ -20,6 +22,28 @@ from pal.library import doctor_library, initialize_library
 from pal.paths import canonical_init_target, normalize_relative_path
 from pal.platform_support import process_exists
 from pal.schema_catalog import SCHEMA_CATALOG
+from pal.web import _WebServer
+
+
+def test_web_listener_excludes_concurrent_bind_and_allows_restart(tmp_path):
+    first = _WebServer(("127.0.0.1", 0), tmp_path, tmp_path)
+    port = first.server_port
+    replacement = None
+    try:
+        if os.name == "nt":
+            assert first.socket.getsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE) == 1
+        with pytest.raises(OSError) as exc_info:
+            _WebServer(("127.0.0.1", port), tmp_path, tmp_path)
+        assert exc_info.value.errno == errno.EADDRINUSE
+    finally:
+        first.server_close()
+
+    try:
+        replacement = _WebServer(("127.0.0.1", port), tmp_path, tmp_path)
+        assert replacement.server_port == port
+    finally:
+        if replacement is not None:
+            replacement.server_close()
 
 
 def test_locks_coordinate_processes_and_release(tmp_path):

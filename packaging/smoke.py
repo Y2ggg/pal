@@ -220,6 +220,9 @@ def main():
                     assert target["creation"]["state"] == "healthy", monitoring
                     assert target["mount"]["state"] == "healthy", monitoring
                 print("PASS: official Claude/Codex system and production plugin installation")
+            reused = run("web", "--port", str(data["port"]), "--no-browser")
+            assert "已在运行" in reused and url in reused
+            assert server.poll() is None
             run("web", "stop", "--port", str(data["port"]))
             assert server.wait(timeout=15) == 0
         finally:
