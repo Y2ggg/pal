@@ -9,4 +9,4 @@ include docs/brand/pal-wordmark.svg
 include docs/brand/pal-wordmark-light.svg
 include docs/brand/pal-icon.svg
 
-recursive-include packaging *.py *.sh *.ps1 *.md
+recursive-include packaging *.py *.sh *.ps1 *.md *.txt

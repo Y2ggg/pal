@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -98,6 +99,7 @@ def main() -> None:
             target.chmod(0o755)
         licenses = bundle / "licenses"
         licenses.mkdir()
+        shutil.copytree(ROOT / "packaging/licenses", licenses / "python-components")
         for name in (*RUNTIME_DEPS, "pyinstaller"):
             package = distribution(name)
             for file in package.files or []:
@@ -138,6 +140,8 @@ def main() -> None:
                     "platform": system,
                     "architecture": architecture,
                     "python": platform.python_version(),
+                    "os_version": platform.platform(),
+                    "source_commit": os.environ.get("GITHUB_SHA"),
                     "build": actual,
                     "dependencies": {name: distribution(name).version for name in RUNTIME_DEPS},
                     "files": files,

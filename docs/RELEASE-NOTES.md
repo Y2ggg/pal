@@ -1,25 +1,25 @@
-# PAL 0.2.4 · 首次公开候选
+# PAL 0.3.0 · 三平台发行候选
 
-PAL（Personal Ability Library，个人能力库）将 Claude Code 与 Codex 中的 Skill 放到一个
-稳定的库里管理：在 CLI 中创建与更新，在本地控制台查看、发布和同步，在新会话中使用。
+PAL（Personal Ability Library，个人能力库）在普通 Claude Code/Codex 中创建、更新与使用
+Skill，在本地 Web 查看完整文件、发布、挂载和维护。采用 MIT 许可。
 
-本版提供完整多文件 Skill、开发/生产/CLI 挂载对照、逐项管理、安装监测与异常恢复。
-采用 MIT 许可，命令、包名和技术标识统一使用 PAL。
+0.3.0 新增原生 Windows 支持，并提供 Windows x64、macOS Apple Silicon/Intel、Linux x64
+独立运行包，包含 Python 与运行依赖，同时保留 wheel 和源码包。沿用现有仓库历史；0.2.x 为
+内部交付/历史候选，未以正式 Release 发行。
 
-安装方式见 [快速开始](QUICKSTART.md)。升级后重启 Web，并在“CLI 与系统”按提示更新
-`pal-create-skill`；系统入口版本为 `0.2.4+native.7`。业务内容不会自动发布或同步。
+系统创建入口为 `0.3.0+native.8`，补充 Windows 临时目录、PowerShell 路径引用及 UTF-8 写入规则。
+新建库采用 portable-1 schema 标识；旧 v1 schema、既有投影按原字节验证，不原地改写。
+程序升级后重启 Web，在“CLI 与系统”更新系统入口；业务发布/挂载仍由用户手动触发。
 
-macOS 已有双端实机验收，目标版本为 Claude Code 2.1.234 / Codex 0.156.1。
-其他 POSIX 系统仍待完整验收，Windows 暂不支持。普通会话不会热加载，同步后需新开会话。
-日常记录、分析、评分及自动迭代未开放；Web 检查不代替业务任务效果测试。
+本版验证进行中，尚未创建正式 Release。最终测试数量、原生安装矩阵与下载摘要将在通过门禁后
+补入本说明。已完成的 macOS 隔离运行包及双端插件安装不能代替尚未完成的平台验收。
 
-本地 Web 增加 Host/Origin 检查和禁止嵌入保护。仅面向本机，不提供远程账号或多用户隔离。
-数据与权限说明见 [SECURITY](../SECURITY.md)。
+模型任务验收与自动化/真实插件安装分别报告。Windows/Linux 本轮不调用模型；此前 macOS
+模型任务证据仍只代表当时版本。分析、评分、日常记录和自动迭代未开放。
 
-当前本地验证：Python 3.14.2 全量 426 项通过，Python 3.11.15 定向 55 项通过；0.2.4 的
-安装包、Web 和文件浏览另有隔离验证。双端原生模型创建/使用沿用 0.2.0 / native.7 的验收，
-0.2.4 未重新发起模型任务。GitHub Actions 已在 macOS/Ubuntu × Python 3.11/3.14 矩阵通过；
-无厂商 CLI 的 runner 跳过 2 个真实 Codex 依赖用例，本机安装 Codex 时 426 项全量通过。自动化、
-安装检查与原生模型验证分别报告，不能互相替代。
+运行包未做 Apple 公证或 Windows Authenticode 签名。Linux 包要求 glibc 2.35+；不提供 musl、
+Windows ARM64 或 Linux ARM64 原生包。Windows 仅支持本地磁盘目录，不支持 UNC、重解析点、
+设备路径和保留文件名。库与配置不支持跨 OS 直接搬迁。Skill 自带外部工具仍需自行安装。
 
-这是发布说明草稿；实际上传后补充下载链接、文件摘要及当次最终验证结果。
+安装、更新、卸载及 PATH 说明见[使用手册](USER-GUIDE.md)。Web 仅供本机单用户使用，
+不支持远程转发或账号隔离。CLI 挂载变化后需新开会话。

@@ -43,6 +43,18 @@ def _executable_name(command: Any) -> str:
 
 
 def _is_blocked(command: Any) -> tuple[str, ...] | None:
+    # Native Windows npm wrappers are launched via node without cmd.exe.
+    if (
+        isinstance(command, Sequence)
+        and not isinstance(command, str)
+        and len(command) > 1
+        and _executable_name(command) == "node"
+    ):
+        entry = str(command[1]).replace("\\", "/")
+        if entry.endswith("/@openai/codex/bin/codex.js"):
+            command = ["codex", *command[2:]]
+        elif entry.endswith("/@anthropic-ai/claude-code/cli.js"):
+            command = ["claude", *command[2:]]
     if _executable_name(command) not in BLOCKED_TARGETS:
         return None
     if not isinstance(command, Sequence) or isinstance(command, str):

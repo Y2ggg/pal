@@ -113,7 +113,7 @@ def validate_windows_path(path: Path) -> None:
         return
     from .errors import PathSafetyError
 
-    if path.drive and (len(path.drive) != 2 or path.drive[1] != ":"):
+    if path.drive and (len(path.drive) != 2 or path.drive[1] != ":" or not path.is_absolute()):
         raise PathSafetyError("PAL requires a local Windows drive, not UNC/device paths")
     for part in path.parts[1:] if path.anchor else path.parts:
         stem = part.split(".")[0].upper()

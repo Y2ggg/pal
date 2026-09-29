@@ -19,7 +19,7 @@
 - 故障拒绝继续，未知不算健康；锁序 maintenance → publication → activation。
 - 安装通过官方 CLI 与 PAL 状态核查，不靠修改用户全局配置绕过协议。
 - 测试使用临时库，禁止修改真实安装；实机验收需要独立隔离与明确授权。
-- macOS 已验收，其他 POSIX 系统待完整验收，Windows 原生支持正在验证。CLI 挂载变化须新开会话。
+- 0.3.0 正在验收 macOS/Linux/原生 Windows，平台安装与模型任务分开报告。CLI 挂载变化须新开会话。
   Web 仅供本机同源访问，不公开转发。
 
 ## 常用检查与导航
@@ -41,3 +41,7 @@ uv run pytest
 使用手册和 CHANGELOG。文档/用户输出用简体中文；机器字段与标识用英文。保留源码中的追踪
 标识，新代码说明产品或验收边界。提交前检查凭据、个人路径和私有内容；公开上传或发布需
 明确授权，先完成可审阅的本地候选与验证。
+
+跨平台文件锁在 `locking.py`，原生路径/进程/外部 CLI 启动在 `platform_support.py`。
+包构建与安装器在 `packaging/`；发行规则见 `docs/RELEASING.md`。新建库使用 portable-1
+路径 schema 标识，旧 v1 catalog 保持原字节；禁止通过重新写入摘要绕过旧材料校验。

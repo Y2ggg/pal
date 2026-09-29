@@ -46,8 +46,11 @@ uv run pytest
 发行前从解压后的 sdist 验证 `uv sync --locked --extra test`；CI action 固定到完整提交 SHA，
 附注标签需解析到 commit。发行源码、依赖和文档应与实际验证对象一致。
 
-运行依赖 Python 3.11+ 与 POSIX 文件锁。macOS 已验收；其他 POSIX 系统待完整验收，Windows
-原生支持正在验证。普通 CLI 会话不热加载，挂载变化后需新开会话。Web 仅供本机同源访问，不公开转发。
+源码安装需要 Python 3.11+；独立包自带运行时。0.3.0 正在验收 macOS/Linux/原生 Windows。普通 CLI 会话不热加载，挂载变化后需新开会话。Web 仅供本机同源访问，不公开转发。
 
 提交前检查秘密、个人路径和私有任务内容。公开上传、创建远端 Release 或包索引发布需要
 用户明确授权；本地准备和验证完成后再提交具体候选供确认。
+
+跨平台文件锁在 `locking.py`，原生路径/进程/外部 CLI 启动在 `platform_support.py`。
+包构建与安装器在 `packaging/`；发行规则见 `docs/RELEASING.md`。新建库使用 portable-1
+路径 schema 标识，旧 v1 catalog 保持原字节；禁止通过重新写入摘要绕过旧材料校验。

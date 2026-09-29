@@ -255,9 +255,9 @@ def test_pal_package_upgrade_recognizes_its_own_previous_marketplace(
 ):
     _, config, installations = creation_installations
     entry, market, _ = installations[cli]
-    monkeypatch.setattr(adapters, "__version__", "0.3.0")
-    monkeypatch.setattr(monitor, "__version__", "0.3.0")
+    monkeypatch.setattr(adapters, "__version__", "0.4.0")
+    monkeypatch.setattr(monitor, "__version__", "0.4.0")
     state = monitor._creation_status(cli, config, [entry], [market])
     assert state["state"] == "outdated"
-    assert state["expected_version"] == "0.3.0+native.8"
+    assert state["expected_version"] == "0.4.0+native.8"
     assert state["installed_marketplace"] == market["name"]

@@ -43,7 +43,7 @@ def default_config_root() -> Path:
     if sys.platform.startswith("win"):
         configured = os.environ.get("LOCALAPPDATA")
         return (Path(configured) if configured else Path.home() / "AppData" / "Local") / "pal"
-    if os.name != "posix":
+    if sys.platform not in {"darwin", "linux"}:
         raise PathSafetyError("PAL requires macOS, Linux or Windows")
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "pal"
