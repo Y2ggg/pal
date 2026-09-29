@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -871,7 +872,7 @@ def test_launch_production_entry_starts_a_validated_interactive_session(
         return 17
 
     monkeypatch.setattr(production_mount_module, "active_runtime_context", runtime_context)
-    monkeypatch.setattr(production_mount_module.subprocess, "call", launch)
+    monkeypatch.setattr(subprocess, "call", launch)
 
     assert (
         launch_production_entry(

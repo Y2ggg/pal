@@ -44,7 +44,7 @@ from .paths import (
     require_inside,
     require_safe_id,
 )
-from .platform_support import command_for_platform, is_link, process_exists
+from .platform_support import is_link, popen_external, process_exists
 from .production_mount import (
     active_runtime_context,
     validate_production_mount,
@@ -495,8 +495,8 @@ def _spawn_cli(
     environment: dict[str, str],
     stderr: BinaryIO,
 ) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(
-        command_for_platform(command),
+    return popen_external(
+        command,
         cwd=cwd,
         env=environment,
         stdin=subprocess.DEVNULL,

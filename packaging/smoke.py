@@ -6,6 +6,7 @@ Traceability: ACC-001/003/007/011/012. No vendor CLI or model is substituted.
 import json
 import os
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -34,6 +35,14 @@ def main():
             PAL_BIN_DIR=str(root / "bin"),
             PAL_CONFIG_ROOT=str(root / "config"),
         )
+        native = "--native-clis" in sys.argv
+        environment.update(
+            CODEX_HOME=str(root / "codex-home"),
+            CLAUDE_CONFIG_DIR=str(root / "claude-home"),
+            DISABLE_TELEMETRY="1",
+        )
+        for key in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):
+            Path(environment[key]).mkdir()
         if os.name == "nt":
             subprocess.run(
                 [
@@ -57,12 +66,14 @@ def main():
             result = subprocess.run(
                 [str(executable), *arguments],
                 env=environment,
-                check=True,
+                check=False,
                 text=True,
                 encoding="utf-8",
                 capture_output=True,
-                timeout=60,
+                timeout=240,
             )
+            if result.returncode:
+                raise RuntimeError(f"{arguments}: {result.stderr or result.stdout}")
             return result.stdout
 
         identity = json.loads((bundle / "BUILD.json").read_text(encoding="utf-8"))
@@ -70,6 +81,20 @@ def main():
         library = root / "library"
         run("init", "--library", str(library), "--library-id", "package-smoke")
         environment["PAL_LIBRARY_ROOT"] = str(library)
+        if native:
+            answers = root / "answers.json"
+            answers.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "library_id": "package-smoke",
+                        "library_path": str(library),
+                        "config_root": str(root / "config"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run("quickstart", "--answers", str(answers))
         for cli in ("claude-code", "codex"):
             run("mount", "config", "--library", str(library), "--cli", cli)
         request = root / "request.json"
@@ -100,6 +125,8 @@ def main():
             asset.write_bytes("中文内容\n".encode())
         run("create", "commit", "--creation", opened["creation_id"])
         run("publish", "--unit", "package-skill")
+        if native:
+            run("sync")
         run("doctor", "--library", str(library))
         server = subprocess.Popen(
             [str(executable), "web", "--port", "0", "--no-browser"],
@@ -122,6 +149,13 @@ def main():
             assert url, "Web service record missing"
             with urllib.request.urlopen(url + "api/status", timeout=10) as response:
                 assert response.status == 200
+            if native:
+                with urllib.request.urlopen(url + "api/monitor", timeout=60) as response:
+                    monitoring = json.load(response)
+                for target in monitoring["targets"]:
+                    assert target["creation"]["state"] == "healthy", monitoring
+                    assert target["mount"]["state"] == "healthy", monitoring
+                print("PASS: official Claude/Codex system and production plugin installation")
             run("web", "stop", "--port", str(data["port"]))
             assert server.wait(timeout=15) == 0
         finally:

@@ -15,7 +15,6 @@ import os
 import re
 import secrets
 import shutil
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -26,7 +25,14 @@ from .config_mount import resolve_config_root, resolve_creation_context
 from .errors import CreationError, IntegrityError, PALError, PathSafetyError
 from .io import fsync_directory, fsync_tree, tree_digest, write_new_bytes
 from .paths import canonical_existing_root, require_inside, validate_regular_tree
-from .platform_support import command_for_platform, is_link, move_path, shell_quote
+from .platform_support import (
+    call_external,
+    command_for_platform,
+    is_link,
+    move_path,
+    run_external,
+    shell_quote,
+)
 from .schema_catalog import TARGET_CLIS
 from .targets import target_driver
 
@@ -334,8 +340,8 @@ def require_supported_cli_version(cli_id: str) -> str:
 
 
 def _run_checked(arguments: list[str]) -> None:
-    process = subprocess.run(
-        command_for_platform(arguments),
+    process = run_external(
+        arguments,
         check=False,
         capture_output=True,
         text=True,
@@ -375,7 +381,7 @@ def _managed_creation_marketplace(
 
 
 def _codex_plugins(executable: str) -> list[dict[str, Any]]:
-    installed = subprocess.run(
+    installed = run_external(
         command_for_platform([executable, "plugin", "list", "--json"]),
         check=False,
         capture_output=True,
@@ -394,7 +400,7 @@ def _codex_plugins(executable: str) -> list[dict[str, Any]]:
 
 
 def _ensure_codex_projection(executable: str, adapter: dict[str, Any]) -> None:
-    listed = subprocess.run(
+    listed = run_external(
         command_for_platform([executable, "plugin", "marketplace", "list", "--json"]),
         check=False,
         capture_output=True,
@@ -478,8 +484,8 @@ def _ensure_codex_projection(executable: str, adapter: dict[str, Any]) -> None:
 
 
 def _claude_json_array(arguments: list[str], label: str) -> list[dict[str, Any]]:
-    process = subprocess.run(
-        command_for_platform(arguments),
+    process = run_external(
+        arguments,
         check=False,
         capture_output=True,
         text=True,
@@ -653,7 +659,7 @@ def launch_creation_entry(
         ]
     else:
         command = [executable, *cli_arguments]
-    return subprocess.call(command_for_platform(command), cwd=root, env=environment)
+    return call_external(command, cwd=root, env=environment)
 
 
 __all__ = [

@@ -3,20 +3,25 @@
 产品名称为 PAL · 个人能力库（Personal Ability Library）；命令、包名、插件调用名和配置路径
 统一使用 PAL 标识。控制台已采用完整 pal 字标和明暗主题标识。
 
-适用：PAL 0.3.0；需要已配置的 Claude Code、Codex，以及 Python 3.11+ 和 uv。
-macOS 已验；其他 POSIX 系统待完整验收，0.3.0 正在验证原生 Windows。代码最低门槛为 Claude Code
-2.1.205、Codex 0.147.0，最近双端验收为 2.1.234 / 0.156.1；版本号达标仍需能力探针通过。
+适用：PAL 0.3.0。三平台发行验收正在进行，最终结果以 Release 为准。
+需要已安装并配置的 Claude Code 与 Codex；PAL 运行包自带 Python，无需 uv。
+代码最低 CLI 门槛为 Claude Code 2.1.205、Codex 0.147.0；版本达标仍需能力探针通过。
 
 ## 设置一次
 
-下载源码后进入项目根目录（含 `pyproject.toml`），再运行：
+从 [Releases](https://github.com/Y2ggg/pal/releases) 选择系统/CPU 对应运行包并解压。
+Windows x64 在 PowerShell 执行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`；
+macOS（Apple Silicon 或 Intel）、Linux x64 执行 `sh install.sh`。
+新开终端；macOS/Linux 确保 `~/.local/bin` 在 PATH。运行：
 
 ```sh
-uv tool install .
+pal --version
 pal quickstart
 ```
 
-也可将 `.` 替换为已下载 wheel 的路径。命令找不到时运行 `uv tool update-shell` 并新开终端。
+源码或 wheel 安装需要 Python 3.11+ 和 uv：源码根目录执行 `uv tool install .`，
+或 `uv tool install ./pal-0.3.0-py3-none-any.whl`。此方式找不到命令时运行 `uv tool update-shell`。
+平台要求、验证范围、安装位置和卸载见[使用手册](USER-GUIDE.md)。
 
 选择独立的 Skill 库保存位置并确认，不要选择程序源码或普通业务项目目录。已有 PAL 库会复用，
 新路径或空目录会初始化为空库。向导准备两端系统创建入口和默认库绑定；保留检查进度，最终
@@ -65,7 +70,7 @@ pal web
 ## 升级和关闭
 
 如果 Web 正在运行，先在另一终端执行 `pal web stop`；没有运行则跳过。再在新版源码根目录
-运行（或将 `.` 换成本地新版 wheel）：
+运行（或将 `.` 换成本地新版 wheel）；运行包用户重新运行新版安装脚本：
 
 ```sh
 uv tool install --force --reinstall .

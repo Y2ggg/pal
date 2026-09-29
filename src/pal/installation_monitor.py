@@ -22,7 +22,7 @@ from .errors import IntegrityError, PALError, ProductionError
 from .library import load_json_object, utc_now
 from .maintenance import lifecycle_write
 from .paths import canonical_existing_root, validate_regular_tree
-from .platform_support import command_for_platform
+from .platform_support import run_external
 from .publishing import library_lock
 from .schema_catalog import TARGET_CLIS
 from .stages import current_production_id
@@ -39,8 +39,8 @@ def _result(state: str, message: str, **fields: Any) -> dict[str, Any]:
 def _inventory(cli_id: str, executable: str, *, marketplaces: bool = False) -> list[dict]:
     args = [executable, "plugin", *(["marketplace"] if marketplaces else []), "list", "--json"]
     try:
-        process = subprocess.run(
-            command_for_platform(args),
+        process = run_external(
+            args,
             capture_output=True,
             text=True,
             encoding="utf-8",

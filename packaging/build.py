@@ -80,6 +80,8 @@ def main() -> None:
         bundle = workspace / label
         bundle.mkdir()
         shutil.move(str(workspace / "dist/pal"), bundle / "runtime")
+        for metadata in (bundle / "runtime").rglob("direct_url.json"):
+            metadata.unlink()
         for name in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
             shutil.copy2(ROOT / name, bundle / name)
         shutil.copy2(ROOT / "packaging/INSTALL.md", bundle / "INSTALL.md")

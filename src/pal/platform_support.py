@@ -129,3 +129,46 @@ def validate_windows_path(path: Path) -> None:
         cursor /= part
         if is_link(cursor):
             raise PathSafetyError(f"path contains a symbolic link or reparse point: {cursor}")
+
+
+def external_environment(environment=None):
+    """Keep frozen PAL libraries out of unrelated vendor executable search paths."""
+    import sys
+
+    if not getattr(sys, "frozen", False):
+        return environment
+    result = dict(os.environ if environment is None else environment)
+    if os.name == "nt":
+        import ctypes
+
+        if not ctypes.windll.kernel32.SetDllDirectoryW(None):
+            raise ctypes.WinError()
+    else:
+        for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+            original = result.pop(key + "_ORIG", None)
+            if original is None:
+                result.pop(key, None)
+            else:
+                result[key] = original
+    return result
+
+
+def run_external(arguments, **kwargs):
+    import subprocess
+
+    kwargs["env"] = external_environment(kwargs.get("env"))
+    return subprocess.run(command_for_platform(arguments), **kwargs)
+
+
+def call_external(arguments, **kwargs):
+    import subprocess
+
+    kwargs["env"] = external_environment(kwargs.get("env"))
+    return subprocess.call(command_for_platform(arguments), **kwargs)
+
+
+def popen_external(arguments, **kwargs):
+    import subprocess
+
+    kwargs["env"] = external_environment(kwargs.get("env"))
+    return subprocess.Popen(command_for_platform(arguments), **kwargs)

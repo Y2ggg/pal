@@ -49,6 +49,8 @@ jobs:
       - run: uv sync --locked --extra test --extra bundle
       - run: uv run python packaging/build.py
       - run: uv run python packaging/smoke.py
+      - run: npm install -g @openai/codex@0.158.0 @anthropic-ai/claude-code@2.1.234
+      - run: uv run python packaging/smoke.py --native-clis
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pal-${{ matrix.os }}

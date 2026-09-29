@@ -40,6 +40,9 @@ pal compatibility check --cli codex
 }
 ```
 
+Windows 中的绝对路径可写为 `C:/Users/me/PAL-Library`，或在 JSON 中把反斜杠写为 `\\`。
+配置默认位置见使用手册；本地库不支持 UNC/网络共享路径。
+
 此例使用自定义配置根。设置后运行管理命令仍需指定同一路径，例如：
 
 ```sh

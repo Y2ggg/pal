@@ -261,7 +261,7 @@ def test_cli_compatibility_gate_accepts_verified_and_probed_newer_versions(
         }
         return SimpleNamespace(returncode=0, stdout=outputs[tuple(suffix)], stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", supported_codex)
+    monkeypatch.setattr(subprocess, "run", supported_codex)
     assert require_supported_cli_version("codex") == "codex"
     assert require_compatible_cli("codex").classification == "verified-version"
 
@@ -283,14 +283,14 @@ def test_cli_compatibility_gate_accepts_verified_and_probed_newer_versions(
             output = "--strict --scope\n"
         return SimpleNamespace(returncode=0, stdout=output, stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", newer_claude)
+    monkeypatch.setattr(subprocess, "run", newer_claude)
     assert require_supported_cli_version("claude-code") == "claude"
     assert require_compatible_cli("claude-code").classification == "probe-compatible-version"
 
     def below_minimum(arguments: list[str], **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(returncode=0, stdout="2.1.204 (Claude Code)\n", stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", below_minimum)
+    monkeypatch.setattr(subprocess, "run", below_minimum)
     with pytest.raises(PALError, match=r"minimum 2\.1\.205, got 2\.1\.204"):
         require_supported_cli_version("claude-code")
 
@@ -313,7 +313,7 @@ def test_cli_compatibility_probe_and_blacklist_fail_closed(
         output = "2.1.237 (Claude Code)\n" if arguments[1:] == ["--version"] else "--plugin-dir\n"
         return SimpleNamespace(returncode=0, stdout=output, stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", missing_surface)
+    monkeypatch.setattr(subprocess, "run", missing_surface)
     with pytest.raises(PALError, match="compatibility probe cli-help is missing"):
         require_compatible_cli("claude-code")
 

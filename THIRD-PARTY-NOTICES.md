@@ -1,7 +1,6 @@
 # 第三方依赖与标识
 
-PAL 自身以 MIT 许可分发，原始许可文本见 [LICENSE](LICENSE)。运行依赖独立安装，不把它们的
-源码并入 PAL。各依赖仍以其自身许可证和发行文件中的版权声明为准。
+PAL 自身以 MIT 许可分发，原始许可文本见 [LICENSE](LICENSE)。wheel 的运行依赖独立安装；独立运行包则随包包含 Python、运行依赖和必要的动态库。各依赖仍以其自身许可证和发行文件中的版权声明为准。
 
 下表对应本次锁文件的运行依赖，不替代上游完整许可；升级依赖时需重新核对。
 普通 wheel/工具安装按包声明的版本范围解析依赖，不强制使用源码的 `uv.lock`；实际安装版本
@@ -19,7 +18,9 @@ PAL 自身以 MIT 许可分发，原始许可文本见 [LICENSE](LICENSE)。运�
 | typing-extensions | 4.16.0 | PSF-2.0 | [python/typing_extensions](https://github.com/python/typing_extensions) |
 
 markdown-it-py 和 mdurl 保留了其 JavaScript 上游的 MIT 版权说明；上游许可随各自包分发。
-pytest、Ruff、uv 及审查工具用于开发验证，不属于 PAL 运行依赖。使用分发工具时仍应遵守其许可。
+pytest、Ruff、uv 用于开发验证，不属于 PAL 运行依赖。独立包使用 PyInstaller（GPL-2.0-or-later
+并附带分发例外），该例外允许按 PAL 自身许可分发冻结的程序。包内 `licenses/` 保留实际
+分发依赖和 Python 的完整许可，BUILD.json 记录版本与文件摘要；以该包内文件为准。
 
 PAL 字标与图标使用本项目原创 SVG 路径，不依赖外部字体。仓库中的文字和标识遵循本项目
 许可；许可证不代表授予第三方商标或官方背书。Claude Code、Codex、Anthropic、OpenAI 等名称

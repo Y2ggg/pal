@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import CompatibilityError
-from .platform_support import command_for_platform
+from .platform_support import run_external
 from .targets import target_driver
 
 VERSION_PATTERN = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)")
@@ -59,8 +59,8 @@ def _run(
     environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(
-            command_for_platform(arguments),
+        return run_external(
+            arguments,
             check=False,
             capture_output=True,
             text=True,

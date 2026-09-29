@@ -14,7 +14,9 @@ if [ -e "$bin_dir/pal" ] || [ -L "$bin_dir/pal" ]; then
   fi
 fi
 if [ -x "$install_dir/runtime/pal" ]; then
-  "$install_dir/runtime/pal" web stop
+  stop_output=$("$install_dir/runtime/pal" web stop 2>&1) || {
+    case "$stop_output" in *'没有可关闭的 PAL Web 服务记录'*) ;; *) printf '%s\n' "$stop_output" >&2; exit 1;; esac
+  }
 fi
 mkdir -p -- "$(dirname -- "$install_dir")" "$bin_dir"
 stage=$(mktemp -d "${install_dir}.new.XXXXXX")

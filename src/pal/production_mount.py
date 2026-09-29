@@ -18,7 +18,6 @@ import re
 import secrets
 import shutil
 import socket
-import subprocess
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -53,7 +52,7 @@ from .paths import (
     require_safe_id,
     validate_regular_tree,
 )
-from .platform_support import command_for_platform, is_link, move_path
+from .platform_support import call_external, command_for_platform, is_link, move_path, run_external
 from .publishing import validate_production_version
 from .schema_catalog import TARGET_CLIS, validate_instance
 from .targets import target_driver
@@ -640,7 +639,7 @@ def _marketplace_root(plan: TargetPlan) -> Path:
 
 
 def _run_claude_validation(plan: TargetPlan) -> None:
-    process = subprocess.run(
+    process = run_external(
         command_for_platform(
             [
                 plan.executables["claude-code"],
@@ -661,8 +660,8 @@ def _run_claude_validation(plan: TargetPlan) -> None:
 
 
 def _run_json(arguments: list[str], label: str) -> dict[str, Any]:
-    process = subprocess.run(
-        command_for_platform(arguments),
+    process = run_external(
+        arguments,
         check=False,
         capture_output=True,
         text=True,
@@ -683,8 +682,8 @@ def _run_json(arguments: list[str], label: str) -> dict[str, Any]:
 def _run_text(arguments: list[str], label: str) -> None:
     """Run one target mutation that reports success through its exit code only."""
 
-    process = subprocess.run(
-        command_for_platform(arguments),
+    process = run_external(
+        arguments,
         check=False,
         capture_output=True,
         text=True,
@@ -698,8 +697,8 @@ def _run_text(arguments: list[str], label: str) -> None:
 def _run_json_array(arguments: list[str], label: str) -> list[dict[str, Any]]:
     """Read one Claude ``--json`` listing, whose envelope is a bare array."""
 
-    process = subprocess.run(
-        command_for_platform(arguments),
+    process = run_external(
+        arguments,
         check=False,
         capture_output=True,
         text=True,
@@ -1941,7 +1940,7 @@ def launch_production_entry(
         # Both targets now resolve the active production plugin from their own
         # persistent installation, so no session-scoped injection is needed.
         command = [runtime["executable"], *cli_arguments]
-        return subprocess.call(command_for_platform(command), env=environment)
+        return call_external(command, env=environment)
 
 
 __all__ = [
