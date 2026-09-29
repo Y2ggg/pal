@@ -54,3 +54,6 @@ uv run pytest
 跨平台文件锁在 `locking.py`，原生路径/进程/外部 CLI 启动在 `platform_support.py`。
 包构建与安装器在 `packaging/`；发行规则见 `docs/RELEASING.md`。新建库使用 portable-1
 路径 schema 标识，旧 v1 catalog 保持原字节；禁止通过重新写入摘要绕过旧材料校验。
+
+Windows CI 将全部 test_*.py 按排序序号拆成两个互斥组，两组并集必须覆盖全部测试；
+只有两组都通过才算该平台/Python 组合的全量门禁通过。

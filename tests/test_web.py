@@ -102,7 +102,9 @@ def test_web_stop_closes_only_a_registered_server(tmp_path, capsys):
         daemon=True,
     )
     thread.start()
-    deadline = time.monotonic() + 5
+    # Startup validates persisted content; parallel CI disk contention is not a
+    # product startup-time assertion. Still fail if registration never finishes.
+    deadline = time.monotonic() + 30
     record_files = []
     while time.monotonic() < deadline:
         record_files = list((config / "web").glob("port-*.json"))

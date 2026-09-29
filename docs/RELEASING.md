@@ -24,6 +24,8 @@ uv run python packaging/smoke.py
 
 `-n 4` 仅将独立测试分配到四个进程；串行 `uv run pytest` 仍受支持。旧 POSIX 特有对象用例
 在 Windows 不适用，Windows 另有真实路径/联接点/跨进程锁回归。跳过项须如实列明。
+Windows CI 为缩短磁盘操作较多的回归耗时，将排序后的全部 test_*.py 按序号奇偶拆成两个
+互斥组，两组都通过才算对应 Python 版本全量通过；两个组的并集必须等于完整收集范围。
 
 独立运行包固定 Python 3.11.15，在各 OS/架构原生构建，不能把 macOS 二进制当作 Windows/Linux 文件交付。
 CI 覆盖 Windows、macOS、Ubuntu × Python 3.11/3.14，以及四种运行包。对打包产物执行安装、

@@ -37,8 +37,8 @@ PAL 0.3.0 增加原生 Windows；三平台验收进行中，当前不把候选�
 | macOS arm64 / x86_64 | Apple Silicon / Intel 分别下载 | 两种架构原生构建；历史模型验收在 Apple Silicon |
 | Linux x64 | glibc 2.35+（例如 Ubuntu 22.04+） | Linux runner 的自动化/安装验证，不包含 musl/Alpine |
 
-macOS 具体最低版本以运行包 BUILD.json 中的构建环境及本次发布说明为准；当前在 macOS 15
-runner 验证。Windows ARM64、Linux ARM64 没有本次原生运行包。Skill 自带脚本和外部工具
+macOS 运行包在 macOS 15 验证，尚未验证更早版本；BUILD.json 记录实际构建环境，
+不表示所有更早版本都能运行。Windows ARM64、Linux ARM64 没有本次原生运行包。Skill 自带脚本和外部工具
 仍可能有自己的平台要求，PAL 不会自动转换它们。
 
 从 [Releases](https://github.com/Y2ggg/pal/releases) 下载并核对 SHA256SUMS：
