@@ -28,7 +28,7 @@ uv run pytest
 uv build
 ```
 
-发行安装验证用 `uv tool install --force --reinstall ./pal-0.2.4-py3-none-any.whl`
+发行安装验证用 `uv tool install --force --reinstall ./pal-0.3.0-py3-none-any.whl`
 （替换为待验 wheel 的实际路径），或在独立虚拟环境用 `uv pip`
 安装。不要覆盖用户业务库来制造“首次使用”环境。源码压缩包应包含用户文档、自动化测试与
 浏览器脚本；wheel 保持运行所需内容，包含 MIT 许可。
@@ -51,4 +51,4 @@ Release 至少包含版本说明、wheel、sdist、SHA-256 清单和实际兼容
 系统入口更新步骤，避免将旧全量结果写成当前新测。发布后从公开下载地址重新安装验证，
 并检查文档、图片、许可证和安装命令是否可用。
 
-`0.2.4` 的发布说明草稿见 [RELEASE-NOTES](RELEASE-NOTES.md)。
+`0.3.0` 的发布说明草稿见 [RELEASE-NOTES](RELEASE-NOTES.md)。

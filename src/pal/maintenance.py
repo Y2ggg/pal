@@ -10,11 +10,7 @@ from functools import wraps
 from inspect import signature
 from pathlib import Path
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - unsupported platform
-    fcntl = None
-
+from . import locking as fcntl
 from .errors import IntegrityError
 from .paths import canonical_existing_root, require_inside
 
@@ -39,7 +35,7 @@ def require_no_cleanup(root: Path) -> None:
 @contextmanager
 def maintenance_lock(root: Path, *, exclusive: bool = False, recovery: bool = False):
     if fcntl is None:
-        raise IntegrityError("维护操作需要 POSIX 文件锁支持")
+        raise IntegrityError("维护操作需要本机文件锁支持")
     root = canonical_existing_root(root)
     held = getattr(_held, "roots", {})
     if root in held:

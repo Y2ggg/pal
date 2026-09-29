@@ -13,12 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - exercised by the platform gate
-    fcntl = None
-
 from . import PAL_FORMAT_VERSION, SCHEMA_VERSION, __version__
+from . import locking as fcntl
 from .components import component_type_driver_for_profile
 from .errors import InitializationError, IntegrityError, PALError, SchemaValidationError
 from .io import (
@@ -38,13 +34,14 @@ from .paths import (
     require_safe_id,
     validate_regular_tree,
 )
+from .platform_support import is_link, move_path
 from .schema_catalog import (
+    PORTABLE_SCHEMA_CATALOG,
     SCHEMA_CATALOG,
     SCHEMA_FILENAMES,
     TARGET_CLIS,
     check_catalog,
     schema_bytes,
-    schema_digest,
     validate_instance,
 )
 
@@ -118,9 +115,9 @@ def utc_now() -> str:
 
 
 def _require_supported_platform() -> None:
-    if os.name != "posix" or fcntl is None:
+    if fcntl is None or not fcntl.SUPPORTED:
         raise InitializationError(
-            "PAL v0.1 requires the validated macOS/POSIX filesystem and lock backend"
+            "PAL requires the validated Windows/macOS/Linux filesystem and lock backend"
         )
 
 
@@ -216,7 +213,7 @@ def _write_schemas(root: Path) -> dict[str, Any]:
             {
                 "name": filename,
                 "path": f"schemas/v1/{filename}",
-                "$id": SCHEMA_CATALOG[filename]["$id"],
+                "$id": PORTABLE_SCHEMA_CATALOG[filename]["$id"],
                 "sha256": sha256_bytes(material),
             }
         )
@@ -328,7 +325,7 @@ def _safe_remove_staging(staging: Path, parent: Path) -> None:
         staging.relative_to(parent)
     except ValueError as exc:  # pragma: no cover - defensive invariant
         raise InitializationError(f"refusing to clean staging outside parent: {staging}") from exc
-    if not staging.name.startswith(".pal-init-") or staging.is_symlink():
+    if not staging.name.startswith(".pal-init-") or is_link(staging):
         raise InitializationError(f"refusing to clean unexpected staging path: {staging}")
     shutil.rmtree(staging)
 
@@ -354,7 +351,10 @@ def initialize_library(path: Path, library_id: str) -> dict[str, Any]:
         _build_library_tree(staging, library_id)
         doctor_library(staging)
         fsync_tree(staging)
-        os.replace(staging, target)
+        if os.name == "nt" and target.exists():
+            # rmdir only removes an empty directory, including after a concurrent change.
+            target.rmdir()
+        move_path(staging, target, replace=True)
         fsync_directory(target.parent)
         committed = True
     except (PALError, OSError):
@@ -404,6 +404,13 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
     if not isinstance(entries, list) or len(entries) != len(SCHEMA_FILENAMES):
         raise SchemaValidationError("schema registry must contain exactly 14 entries")
 
+    catalog = SCHEMA_CATALOG
+    if (
+        entries
+        and isinstance(entries[0], dict)
+        and entries[0].get("$id") == PORTABLE_SCHEMA_CATALOG[SCHEMA_FILENAMES[0]]["$id"]
+    ):
+        catalog = PORTABLE_SCHEMA_CATALOG
     names: list[str] = []
     identifiers: set[str] = set()
     for entry in entries:
@@ -414,7 +421,7 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
             raise SchemaValidationError(f"unknown registered schema: {filename}")
         if entry["path"] != f"schemas/v1/{filename}":
             raise SchemaValidationError(f"registered schema path is invalid: {filename}")
-        if entry["$id"] != SCHEMA_CATALOG[filename]["$id"]:
+        if entry["$id"] != catalog[filename]["$id"]:
             raise SchemaValidationError(f"registered schema ID is invalid: {filename}")
         if entry["$id"] in identifiers:
             raise SchemaValidationError(f"duplicate registered schema ID: {entry['$id']}")
@@ -424,9 +431,9 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
             {"path": entry["path"], "sha256": entry["sha256"]},
             f"schema {filename}",
         )
-        if entry["sha256"] != schema_digest(filename):
+        if entry["sha256"] != sha256_bytes(formatted_json_bytes(catalog[filename])):
             raise IntegrityError(f"registered schema differs from PAL v1 catalog: {filename}")
-        if load_json_object(schema_path) != SCHEMA_CATALOG[filename]:
+        if load_json_object(schema_path) != catalog[filename]:
             raise IntegrityError(
                 f"registered schema bytes decode to unexpected content: {filename}"
             )
@@ -493,7 +500,7 @@ def _verify_active_pointer(root: Path, library_id: str) -> dict[str, Any]:
         _verify_reference(root, active["production_manifest"], "production_manifest")
         bundle = active["production_mount_bundle"]
         bundle_path = Path(bundle["path"])
-        if bundle_path.is_symlink() or not bundle_path.is_file():
+        if is_link(bundle_path) or not bundle_path.is_file():
             raise IntegrityError(f"production mount bundle is unavailable: {bundle_path}")
         require_digest(bundle_path, bundle["sha256"], "production mount bundle")
     return active

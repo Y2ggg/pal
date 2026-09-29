@@ -22,12 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - guarded by the P0 platform gate
-    fcntl = None
-
 from . import __version__
+from . import locking as fcntl
 from .components import SKILL_COMPONENT_TYPE_ID, component_type_driver
 from .config_mount import resolve_config_root
 from .errors import IntegrityError, PathSafetyError, UsageError
@@ -48,6 +44,7 @@ from .paths import (
     require_inside,
     require_safe_id,
 )
+from .platform_support import command_for_platform, is_link, process_exists
 from .production_mount import (
     active_runtime_context,
     validate_production_mount,
@@ -281,12 +278,12 @@ def _validate_context_shape(
         )
         if projected != plugin_root / relative or runtime != runtime_root / relative:
             raise PathSafetyError("usage context Skill path escapes its plugin root")
-        if projected.is_symlink() or not projected.is_file():
+        if is_link(projected) or not projected.is_file():
             raise IntegrityError(f"usage context projected Skill is unavailable: {projected}")
         if sha256_file(projected) != candidate["skill_sha256"]:
             raise IntegrityError(f"usage context projected Skill drifted: {projected}")
         if require_runtime:
-            if runtime.is_symlink() or not runtime.is_file():
+            if is_link(runtime) or not runtime.is_file():
                 raise IntegrityError(f"usage context runtime Skill is unavailable: {runtime}")
             if sha256_file(runtime) != candidate["skill_sha256"]:
                 raise IntegrityError(f"usage context runtime Skill drifted: {runtime}")
@@ -306,8 +303,8 @@ def _mkdir_descendant(path: Path, root: Path) -> None:
     cursor = root
     for part in relative.parts:
         cursor /= part
-        if cursor.exists() or cursor.is_symlink():
-            if cursor.is_symlink() or not cursor.is_dir():
+        if cursor.exists() or is_link(cursor):
+            if is_link(cursor) or not cursor.is_dir():
                 raise PathSafetyError(f"usage path is not a real directory: {cursor}")
         else:
             cursor.mkdir()
@@ -320,7 +317,7 @@ def _safe_remove_transaction(path: Path, parent: Path) -> None:
         raise PathSafetyError(
             f"refusing to clean usage transaction outside its root: {path}"
         ) from exc
-    if path.is_symlink() or not path.name.startswith("usage-"):
+    if is_link(path) or not path.name.startswith("usage-"):
         raise PathSafetyError(f"refusing to clean unexpected usage transaction: {path}")
     shutil.rmtree(path)
     fsync_directory(parent)
@@ -499,7 +496,7 @@ def _spawn_cli(
     stderr: BinaryIO,
 ) -> subprocess.Popen[bytes]:
     return subprocess.Popen(
-        command,
+        command_for_platform(command),
         cwd=cwd,
         env=environment,
         stdin=subprocess.DEVNULL,
@@ -826,7 +823,7 @@ def _validate_record_value(
             f"usage artifact {artifact['artifact_id']}",
         )
         candidate = payload_root / relative
-        if candidate.is_file() and not candidate.is_symlink():
+        if candidate.is_file() and not is_link(candidate):
             matches.append(candidate)
     if len(matches) != 1 or sha256_file(matches[0]) != selection["loaded_sha256"]:
         raise IntegrityError("usage selected Skill does not resolve through production")
@@ -911,7 +908,7 @@ def _cleanup_record_temps(parent: Path) -> list[Path]:
     for path in sorted(parent.iterdir()):
         if TEMP_RECORD_PATTERN.fullmatch(path.name) is None:
             continue
-        if path.is_symlink() or not path.is_file():
+        if is_link(path) or not path.is_file():
             raise PathSafetyError(f"unsafe usage record temporary file: {path}")
         path.unlink()
         removed.append(path)
@@ -923,9 +920,9 @@ def _cleanup_record_temps(parent: Path) -> list[Path]:
 @contextmanager
 def _record_lock(parent: Path) -> Iterator[None]:
     if fcntl is None:  # pragma: no cover - P0 rejects this platform
-        raise UsageError("usage record append requires the POSIX lock backend")
+        raise UsageError("usage record append requires a supported file lock backend")
     lock_path = parent / ".append.lock"
-    if lock_path.is_symlink():
+    if is_link(lock_path):
         raise PathSafetyError(f"usage append lock cannot be a symbolic link: {lock_path}")
     descriptor = os.open(
         lock_path,
@@ -1106,13 +1103,7 @@ def _process_alive(process: dict[str, Any]) -> bool:
         pid = process.get(field)
         if not isinstance(pid, int) or pid <= 0 or pid == os.getpid():
             continue
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            continue
-        except PermissionError:
-            return True
-        else:
+        if process_exists(pid):
             return True
     return False
 
@@ -1292,7 +1283,7 @@ def _validate_recovery_context(context: dict[str, Any], library_root: Path) -> N
         if sha256_file(source_skill) != candidate["skill_sha256"]:
             raise IntegrityError(f"recovery production Skill drifted: {source_skill}")
         projected = Path(candidate["projected_skill_path"])
-        if projected.is_symlink() or not projected.is_file():
+        if is_link(projected) or not projected.is_file():
             raise IntegrityError(f"recovery projected Skill is unavailable: {projected}")
         if sha256_file(projected) != candidate["skill_sha256"]:
             raise IntegrityError(f"recovery projected Skill drifted: {projected}")
@@ -1313,7 +1304,7 @@ def recover_usage_transactions(
     aborted: list[str] = []
     pending: list[str] = []
     for transaction_root in sorted(parent.iterdir()):
-        if transaction_root.is_symlink() or not transaction_root.is_dir():
+        if is_link(transaction_root) or not transaction_root.is_dir():
             raise PathSafetyError(f"invalid usage transaction entry: {transaction_root}")
         require_safe_id(transaction_root.name, "usage transaction directory")
         transaction, context = _load_transaction(transaction_root, root)

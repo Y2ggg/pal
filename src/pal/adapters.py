@@ -14,7 +14,6 @@ import json
 import os
 import re
 import secrets
-import shlex
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -27,13 +26,14 @@ from .config_mount import resolve_config_root, resolve_creation_context
 from .errors import CreationError, IntegrityError, PALError, PathSafetyError
 from .io import fsync_directory, fsync_tree, tree_digest, write_new_bytes
 from .paths import canonical_existing_root, require_inside, validate_regular_tree
+from .platform_support import command_for_platform, is_link, move_path, shell_quote
 from .schema_catalog import TARGET_CLIS
 from .targets import target_driver
 
 PLUGIN_NAME = "pal"
 SKILL_NAME = "pal-create-skill"
-CREATION_LAYOUT_VERSION = "native-v7"
-CREATION_ADAPTER_SUFFIX = "native.7"
+CREATION_LAYOUT_VERSION = "native-v8"
+CREATION_ADAPTER_SUFFIX = "native.8"
 
 CREATE_SKILL_TEMPLATE = """---
 name: pal-create-skill
@@ -58,7 +58,11 @@ Do not infer a target from the current working directory, the library name, or a
 Create or update a Skill only through the PAL transaction protocol. Do not invoke a CLI built-in
 creator and do not write a formal result into a CLI-private Skill directory.
 
-1. Create a private system temporary directory (for example with `mktemp -d`). Convert the user's
+1. Create a private system temporary directory. On POSIX use `mktemp -d`; on Windows PowerShell,
+   use a new GUID-named directory under `[System.IO.Path]::GetTempPath()`. Write request and Skill
+   text as UTF-8 without BOM (PowerShell 5: `[System.Text.UTF8Encoding]::new($false)`). Use shell-
+   appropriate quoting: the config-root examples below use this machine's default shell convention
+   (PowerShell on Windows, POSIX shell elsewhere). Convert the user's
    intent into a JSON request file there with exactly these fields: `schema_version`, `unit_id`,
    `summary`, and `profile_by_cli` for a new Skill. `schema_version` must be the JSON number `1`;
    a string value is invalid. For an update, use the same four fields plus `base_revision_id` and
@@ -147,7 +151,7 @@ def _creation_skill(cli_id: str, config_root: Path) -> bytes:
         raise CreationError(f"unsupported adapter CLI: {cli_id}")
     return CREATE_SKILL_TEMPLATE.format(
         cli_id=cli_id,
-        config_root=shlex.quote(str(config_root)),
+        config_root=shell_quote(str(config_root)),
     ).encode("utf-8")
 
 
@@ -194,15 +198,15 @@ def _mkdir_descendant(path: Path, root: Path) -> None:
     cursor = root
     for part in relative.parts:
         cursor /= part
-        if cursor.exists() or cursor.is_symlink():
-            if cursor.is_symlink() or not cursor.is_dir():
+        if cursor.exists() or is_link(cursor):
+            if is_link(cursor) or not cursor.is_dir():
                 raise PathSafetyError(f"adapter path is not a real directory: {cursor}")
         else:
             cursor.mkdir()
 
 
 def _verify_projection(root: Path, expected: dict[str, bytes]) -> None:
-    if root.is_symlink() or not root.is_dir():
+    if is_link(root) or not root.is_dir():
         raise PathSafetyError(f"adapter projection is not a real directory: {root}")
     validate_regular_tree(root)
     actual_files = {
@@ -240,7 +244,7 @@ def _safe_remove_staging(path: Path, parent: Path) -> None:
         path.relative_to(parent)
     except ValueError as exc:  # pragma: no cover - defensive invariant
         raise CreationError(f"refusing to clean adapter staging path: {path}") from exc
-    if path.is_symlink() or not path.name.startswith(".adapter-"):
+    if is_link(path) or not path.name.startswith(".adapter-"):
         raise CreationError(f"refusing to clean unexpected adapter path: {path}")
     shutil.rmtree(path)
 
@@ -265,7 +269,7 @@ def prepare_creation_adapter(
     projection_root = version_parent / cli_id
     plugin_relative, expected = _projection_files(cli_id, pal_config_root)
 
-    if projection_root.exists() or projection_root.is_symlink():
+    if projection_root.exists() or is_link(projection_root):
         validate_creation_source(cli_id, pal_config_root)
         idempotent = True
     else:
@@ -277,7 +281,7 @@ def prepare_creation_adapter(
                 write_new_bytes(staging / relative, material)
             _verify_projection(staging, expected)
             fsync_tree(staging)
-            os.rename(staging, projection_root)
+            move_path(staging, projection_root)
             fsync_directory(version_parent)
             committed = True
         finally:
@@ -330,7 +334,13 @@ def require_supported_cli_version(cli_id: str) -> str:
 
 
 def _run_checked(arguments: list[str]) -> None:
-    process = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    process = subprocess.run(
+        command_for_platform(arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if process.returncode != 0:
         detail = process.stderr.strip() or process.stdout.strip()
         raise CreationError(f"adapter command failed ({' '.join(arguments[:4])}): {detail}")
@@ -366,10 +376,11 @@ def _managed_creation_marketplace(
 
 def _codex_plugins(executable: str) -> list[dict[str, Any]]:
     installed = subprocess.run(
-        [executable, "plugin", "list", "--json"],
+        command_for_platform([executable, "plugin", "list", "--json"]),
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if installed.returncode != 0:
         raise CreationError(f"cannot verify installed Codex plugin: {installed.stderr.strip()}")
@@ -384,10 +395,11 @@ def _codex_plugins(executable: str) -> list[dict[str, Any]]:
 
 def _ensure_codex_projection(executable: str, adapter: dict[str, Any]) -> None:
     listed = subprocess.run(
-        [executable, "plugin", "marketplace", "list", "--json"],
+        command_for_platform([executable, "plugin", "marketplace", "list", "--json"]),
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if listed.returncode != 0:
         raise CreationError(f"cannot list Codex marketplaces: {listed.stderr.strip()}")
@@ -466,7 +478,13 @@ def _ensure_codex_projection(executable: str, adapter: dict[str, Any]) -> None:
 
 
 def _claude_json_array(arguments: list[str], label: str) -> list[dict[str, Any]]:
-    process = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    process = subprocess.run(
+        command_for_platform(arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if process.returncode != 0:
         raise CreationError(f"{label} failed: {process.stderr.strip() or process.stdout.strip()}")
     try:
@@ -482,7 +500,7 @@ def _ensure_claude_projection(executable: str, adapter: dict[str, Any]) -> None:
     marketplace_name = adapter["marketplace_name"]
     selector = f"{PLUGIN_NAME}@{marketplace_name}"
     marketplaces = _claude_json_array(
-        [executable, "plugin", "marketplace", "list", "--json"],
+        command_for_platform([executable, "plugin", "marketplace", "list", "--json"]),
         "Claude marketplace list",
     )
     matching = [item for item in marketplaces if item.get("name") == marketplace_name]
@@ -497,7 +515,7 @@ def _ensure_claude_projection(executable: str, adapter: dict[str, Any]) -> None:
                     f"Claude marketplace name already points elsewhere: {marketplace_name}"
                 )
             plugins = _claude_json_array(
-                [executable, "plugin", "list", "--json"],
+                command_for_platform([executable, "plugin", "list", "--json"]),
                 "Claude plugin list",
             )
             if any(item.get("id") == selector for item in plugins):
@@ -518,7 +536,7 @@ def _ensure_claude_projection(executable: str, adapter: dict[str, Any]) -> None:
         )
     _run_checked([executable, "plugin", "install", selector, "--scope", "user", "--yes"])
     plugins = _claude_json_array(
-        [executable, "plugin", "list", "--json"],
+        command_for_platform([executable, "plugin", "list", "--json"]),
         "Claude plugin list",
     )
     matching_plugins = [
@@ -605,7 +623,7 @@ def launch_creation_entry(
     context = resolve_creation_context(root, config_root=config_root)
     pal_config_root = resolve_config_root(config_root, create=False)
     transition = pal_config_root / f"transitions/production/{context['library_id']}.json"
-    if transition.exists() or transition.is_symlink():
+    if transition.exists() or is_link(transition):
         raise CreationError(
             f"cannot launch a creation entry during a production transition: {transition}"
         )
@@ -635,7 +653,7 @@ def launch_creation_entry(
         ]
     else:
         command = [executable, *cli_arguments]
-    return subprocess.call(command, cwd=root, env=environment)
+    return subprocess.call(command_for_platform(command), cwd=root, env=environment)
 
 
 __all__ = [

@@ -195,7 +195,7 @@ def test_corrupt_archive_blocks_publish(archived_publication):
 def test_archive_republication_retries_atomically(archived_publication, monkeypatch, after_rename):
     root, config, version, archive = archived_publication
     before = tree_digest(archive)
-    original = publishing.os.rename
+    original = publishing.move_path
 
     def interrupt(source, target):
         if target == root / "production/versions" / version:
@@ -204,10 +204,10 @@ def test_archive_republication_retries_atomically(archived_publication, monkeypa
             raise OSError("injected archive interruption")
         return original(source, target)
 
-    monkeypatch.setattr(publishing.os, "rename", interrupt)
+    monkeypatch.setattr(publishing, "move_path", interrupt)
     with pytest.raises(OSError, match="injected"):
         publish_unit(root, "example", config_root=config)
     assert tree_digest(archive) == before
-    monkeypatch.setattr(publishing.os, "rename", original)
+    monkeypatch.setattr(publishing, "move_path", original)
     assert publish_unit(root, "example", config_root=config)["production_version_id"] == version
     assert tree_digest(root / "production/versions" / version) == before

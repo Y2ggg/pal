@@ -3,7 +3,6 @@
 Traceability: DEL-001 through DEL-005; ACC-008, ACC-012.
 """
 
-import fcntl
 import json
 import shutil
 from pathlib import Path
@@ -11,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from pal import deletion, production_mount
+from pal import locking as fcntl
 from pal.cli import main
 from pal.creation import begin_creation
 from pal.errors import PALError

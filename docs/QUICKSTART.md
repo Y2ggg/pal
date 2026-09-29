@@ -3,8 +3,8 @@
 产品名称为 PAL · 个人能力库（Personal Ability Library）；命令、包名、插件调用名和配置路径
 统一使用 PAL 标识。控制台已采用完整 pal 字标和明暗主题标识。
 
-适用：PAL 0.2.4；需要已配置的 Claude Code、Codex，以及 Python 3.11+ 和 uv。
-macOS 已验；其他 POSIX 系统待完整验收，Windows 暂不支持。代码最低门槛为 Claude Code
+适用：PAL 0.3.0；需要已配置的 Claude Code、Codex，以及 Python 3.11+ 和 uv。
+macOS 已验；其他 POSIX 系统待完整验收，0.3.0 正在验证原生 Windows。代码最低门槛为 Claude Code
 2.1.205、Codex 0.147.0，最近双端验收为 2.1.234 / 0.156.1；版本号达标仍需能力探针通过。
 
 ## 设置一次
@@ -73,7 +73,7 @@ pal web
 ```
 
 然后在“CLI 与系统”按提示更新创建入口到当前版本，并打开新会话。升级入口不会同步业务 Skill。
-当前入口为 `0.2.4+native.7`；`pal --version` 可查看 PAL 版本和构建。
+当前入口为 `0.3.0+native.8`；`pal --version` 可查看 PAL 版本和构建。
 
 换端口：`pal web --port 8899`；关闭该服务：`pal web stop --port 8899`。
 `--port 0` 自动选端口，`--no-browser` 只启动服务。端口占用会显示当前地址；同库同构建可复用，

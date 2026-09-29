@@ -6,7 +6,6 @@ ACC-009, ACC-010, ACC-011, ACC-012.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import shlex
@@ -18,6 +17,7 @@ import pytest
 import pal.cli as cli_module
 import pal.production_mount as production_mount_module
 import pal.usage as usage_module
+from pal import locking as fcntl
 from pal.compatibility import CliCompatibility
 from pal.errors import PALError, UsageError
 from pal.io import sha256_file

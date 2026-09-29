@@ -8,6 +8,7 @@ from .errors import PathSafetyError
 from .library import doctor_library, load_json_object
 from .maintenance import lifecycle_write, skill_action_path
 from .paths import require_inside, require_safe_id
+from .platform_support import is_link
 from .production_mount import _transition_path
 from .publishing import validate_development_revision, validate_production_version
 from .schema_catalog import validate_instance
@@ -56,7 +57,7 @@ def library_status(root: Path, config_root: Path) -> dict[str, Any]:
     units_root = require_inside(root, "development/units", "development units root")
     development = {}
     for candidate in sorted(units_root.iterdir()):
-        if candidate.is_symlink() or not candidate.is_dir():
+        if is_link(candidate) or not candidate.is_dir():
             raise PathSafetyError(f"development unit entry is invalid: {candidate}")
         require_safe_id(candidate.name, "development unit directory")
         unit = _json_file(candidate / "unit.json")

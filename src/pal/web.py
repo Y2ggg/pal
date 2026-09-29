@@ -35,6 +35,7 @@ from .io import atomic_replace_json
 from .library import doctor_development_context, load_json_object
 from .maintenance import cleanup_path, maintenance_lock, skill_action_path
 from .paths import canonical_existing_root, require_safe_id
+from .platform_support import is_link
 from .production_mount import recover_production
 from .publication import sync_production
 from .schema_catalog import validate_config_instance
@@ -1046,7 +1047,7 @@ def run_web(
         print("\nPAL Web 已停止。")
     finally:
         try:
-            if record_path is not None and record_path.is_file() and not record_path.is_symlink():
+            if record_path is not None and record_path.is_file() and not is_link(record_path):
                 try:
                     recorded = load_json_object(record_path)
                 except (PALError, OSError):
@@ -1060,7 +1061,7 @@ def run_web(
 
 def _web_record_path(config_root: Path, port: int) -> Path:
     directory = config_root / "web"
-    if directory.is_symlink():
+    if is_link(directory):
         raise PathSafetyError(f"PAL Web 记录目录不能是符号链接：{directory}")
     directory.mkdir(exist_ok=True)
     return directory / f"port-{port}.json"
@@ -1073,7 +1074,7 @@ def stop_web(*, config_root: Path | None = None, port: int = DEFAULT_PORT) -> in
         raise PathSafetyError("关闭服务时端口必须在 1 到 65535 之间")
     root = resolve_config_root(config_root, create=False)
     record_path = root / "web" / f"port-{port}.json"
-    if record_path.is_symlink() or not record_path.is_file():
+    if is_link(record_path) or not record_path.is_file():
         raise PALError(f"端口 {port} 没有可关闭的 PAL Web 服务记录")
     record = load_json_object(record_path)
     host, token, instance_id = (

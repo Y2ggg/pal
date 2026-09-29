@@ -9,6 +9,7 @@ from .errors import IntegrityError, PALError
 from .library import doctor_library, load_json_object
 from .maintenance import maintenance_lock
 from .paths import canonical_existing_root, require_inside, require_safe_id
+from .platform_support import is_link
 from .publishing import validate_development_revision, validate_production_version
 from .schema_catalog import validate_instance
 
@@ -17,7 +18,7 @@ def _development(root: Path) -> int:
     units = require_inside(root, "development/units", "开发库")
     count = 0
     for directory in sorted(units.iterdir()):
-        if directory.is_symlink() or not directory.is_dir():
+        if is_link(directory) or not directory.is_dir():
             raise IntegrityError(f"Skill 目录无效：{directory}")
         require_safe_id(directory.name, "Skill ID")
         unit = load_json_object(directory / "unit.json")

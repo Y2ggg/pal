@@ -13,7 +13,7 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 在本地 Web 控制台查看内容、发布、挂载和维护。开发中的修改与正在使用的内容相互独立，
 什么时候发布、什么时候交给 CLI 使用，由你决定。
 
-当前候选版本 **0.2.4**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
+当前候选版本 **0.3.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
 配置路径使用 PAL 专属目录。
 
 ## 可以做什么
@@ -31,7 +31,7 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 
 需要 Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及已完成登录
 或模型配置的 Claude Code 和 Codex。**macOS 已做双端实机验证**；其他 POSIX 系统尚待完整
-验收，Windows 暂不支持。CLI 兼容范围见[快速开始](docs/QUICKSTART.md)。
+验收，0.3.0 正在验证原生 Windows。CLI 兼容范围见[快速开始](docs/QUICKSTART.md)。
 
 下载源码并进入包含 `pyproject.toml` 的项目根目录：
 
@@ -43,7 +43,7 @@ pal quickstart
 或者安装下载的发行文件：
 
 ```sh
-uv tool install ./pal-0.2.4-py3-none-any.whl
+uv tool install ./pal-0.3.0-py3-none-any.whl
 pal quickstart
 ```
 

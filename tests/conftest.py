@@ -30,7 +30,13 @@ BLOCKED_SUBCOMMANDS = (
 
 def _executable_name(command: Any) -> str:
     if isinstance(command, str):
-        return command.rsplit("/", 1)[-1]
+        return (
+            command.replace("\\", "/")
+            .rsplit("/", 1)[-1]
+            .lower()
+            .removesuffix(".exe")
+            .removesuffix(".cmd")
+        )
     if isinstance(command, Sequence) and command:
         return _executable_name(command[0])
     return ""

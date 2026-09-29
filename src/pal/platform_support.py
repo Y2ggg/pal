@@ -1,0 +1,131 @@
+"""Native platform boundaries for files, shells and process inspection.
+
+Traceability: PRD-TECH-001, PRD-P0-002; ACC-001/011/012.
+"""
+
+import os
+import shlex
+import stat
+from pathlib import Path
+
+
+def is_link(path: Path) -> bool:
+    """Reject Windows junctions and other reparse points as well as symlinks."""
+    if path.is_symlink():
+        return True
+    if os.name == "nt":
+        try:
+            return bool(path.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        except FileNotFoundError:
+            return False
+    return False
+
+
+def shell_quote(value: str) -> str:
+    if os.name == "nt":
+        return "'" + value.replace("'", "''") + "'"
+    return shlex.quote(value)
+
+
+def move_path(source: Path, destination: Path, *, replace: bool = False) -> None:
+    """Same-volume publish, with Windows write-through and POSIX directory sync."""
+    if os.name != "nt":
+        (os.replace if replace else os.rename)(source, destination)
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    move = kernel.MoveFileExW
+    move.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+    move.restype = wintypes.BOOL
+    # No COPY_ALLOWED: a cross-volume copy cannot preserve atomic publication.
+    if not move(str(source), str(destination), 8 | (1 if replace else 0)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def process_exists(pid: int) -> bool:
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        code = ctypes.get_last_error()
+        if code == 5:
+            return True
+        if code == 87:
+            return False
+        raise ctypes.WinError(code)
+    try:
+        status = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(status)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return status.value == 259  # STILL_ACTIVE
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def command_for_platform(arguments: list[str]) -> list[str]:
+    """Resolve Windows native executables or known npm entrypoints without cmd.exe."""
+    if os.name != "nt" or not arguments:
+        return arguments
+    import shutil
+
+    from .errors import CompatibilityError
+
+    executable = shutil.which(arguments[0])
+    if executable is None:
+        return arguments  # Let the caller report the missing program.
+    if Path(executable).suffix.lower() not in {".cmd", ".bat"}:
+        return [executable, *arguments[1:]]
+    name = Path(executable).stem.lower()
+    entrypoints = {
+        "codex": "@openai/codex/bin/codex.js",
+        "claude": "@anthropic-ai/claude-code/cli.js",
+    }
+    entry = Path(executable).parent / "node_modules" / entrypoints.get(name, "__unsupported__")
+    node = shutil.which("node.exe")
+    if name in entrypoints and entry.is_file() and node:
+        return [node, str(entry), *arguments[1:]]
+    raise CompatibilityError(
+        f"无法安全启动 Windows CLI 包装脚本：{executable}；请使用官方原生安装或标准 npm 安装"
+    )
+
+
+def validate_windows_path(path: Path) -> None:
+    """Local drive paths only; reject aliases before filesystem normalization."""
+    if os.name != "nt":
+        return
+    from .errors import PathSafetyError
+
+    if path.drive and (len(path.drive) != 2 or path.drive[1] != ":"):
+        raise PathSafetyError("PAL requires a local Windows drive, not UNC/device paths")
+    for part in path.parts[1:] if path.anchor else path.parts:
+        stem = part.split(".")[0].upper()
+        if (
+            part.endswith((".", " "))
+            or any(c in '<>:"|?*' or ord(c) < 32 for c in part)
+            or stem in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+            or stem in {f"{prefix}{n}" for prefix in ("COM", "LPT") for n in "123456789¹²³"}
+        ):
+            raise PathSafetyError(f"unsupported Windows path component: {part}")
+    cursor = Path(path.anchor)
+    for part in path.parts[1:] if path.anchor else path.parts:
+        cursor /= part
+        if is_link(cursor):
+            raise PathSafetyError(f"path contains a symbolic link or reparse point: {cursor}")

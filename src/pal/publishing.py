@@ -17,12 +17,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - guarded by the P0 platform gate
-    fcntl = None
-
 from . import __version__
+from . import locking as fcntl
 from .components import component_type_driver
 from .domain import decode_format_v1_plugin
 from .errors import IntegrityError, PathSafetyError, ProductionError, ReleaseError
@@ -45,6 +41,7 @@ from .paths import (
     require_safe_id,
     validate_regular_tree,
 )
+from .platform_support import is_link, move_path
 from .schema_catalog import TARGET_CLIS, validate_instance
 
 
@@ -69,7 +66,7 @@ def _validate_inventory(
     *,
     allow_empty: bool = False,
 ) -> list[dict[str, str]]:
-    if payload_root.is_symlink() or not payload_root.is_dir():
+    if is_link(payload_root) or not payload_root.is_dir():
         raise IntegrityError(f"{label} payload root is not a real directory: {payload_root}")
     if not isinstance(entries, list) or (not entries and not allow_empty):
         raise IntegrityError(f"{label} file inventory must be non-empty")
@@ -122,10 +119,10 @@ def library_lock(root: Path, name: str, label: str) -> Iterator[None]:
     """
 
     if fcntl is None:  # pragma: no cover - doctor already rejects this platform
-        raise ReleaseError(f"{label} requires the POSIX lock backend")
+        raise ReleaseError(f"{label} requires a supported file lock backend")
     lock_parent = require_inside(root, ".pal/locks", "PAL lock root")
     lock_path = lock_parent / f"{name}.lock"
-    if lock_path.is_symlink():
+    if is_link(lock_path):
         raise PathSafetyError(f"{label} lock cannot be a symbolic link: {lock_path}")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(lock_path, flags, 0o644)
@@ -145,7 +142,7 @@ def _safe_remove_temporary(path: Path, parent: Path, prefix: str) -> None:
         path.relative_to(parent)
     except ValueError as exc:  # pragma: no cover - defensive invariant
         raise PathSafetyError(f"refusing to clean temporary publishing path: {path}") from exc
-    if path.is_symlink() or not path.name.startswith(prefix):
+    if is_link(path) or not path.name.startswith(prefix):
         raise PathSafetyError(f"refusing to clean unexpected publishing path: {path}")
     shutil.rmtree(path)
 
@@ -159,7 +156,7 @@ def _validate_artifact(
     allowed_root: Path,
     label: str,
 ) -> dict[str, Any]:
-    if manifest_path.is_symlink() or not manifest_path.is_file():
+    if is_link(manifest_path) or not manifest_path.is_file():
         raise IntegrityError(f"{label} manifest is unavailable: {manifest_path}")
     if sha256_file(manifest_path) != manifest_sha256:
         raise IntegrityError(f"{label} manifest SHA-256 mismatch")
@@ -329,7 +326,7 @@ def _validate_release_at(
     expected_unit_id: str | None = None,
     expected_release_id: str | None = None,
 ) -> dict[str, Any]:
-    if release_root.is_symlink() or not release_root.is_dir():
+    if is_link(release_root) or not release_root.is_dir():
         raise IntegrityError(f"release root is not a real directory: {release_root}")
     validate_regular_tree(release_root)
     manifest_path = require_inside(release_root, "release.json", "release manifest")
@@ -482,15 +479,15 @@ def create_release(library_root: Path, unit_id: str, revision_id: str) -> dict[s
         source = _load_development_revision(root, unit_id, revision_id)
         release_id = _release_id(source)
         unit_release_root = releases_parent / unit_id
-        if unit_release_root.exists() or unit_release_root.is_symlink():
-            if unit_release_root.is_symlink() or not unit_release_root.is_dir():
+        if unit_release_root.exists() or is_link(unit_release_root):
+            if is_link(unit_release_root) or not unit_release_root.is_dir():
                 raise PathSafetyError(f"release unit root is invalid: {unit_release_root}")
         else:
             unit_release_root.mkdir()
             fsync_directory(releases_parent)
 
         target = unit_release_root / release_id
-        if target.exists() or target.is_symlink():
+        if target.exists() or is_link(target):
             validated = _validate_release_at(
                 root,
                 target,
@@ -561,7 +558,7 @@ def create_release(library_root: Path, unit_id: str, revision_id: str) -> dict[s
             confirmed_source = _load_development_revision(root, unit_id, revision_id)
             if _release_fingerprint(confirmed_source) != _release_fingerprint(source):
                 raise IntegrityError("development revision changed while creating its release")
-            os.rename(temporary, target)
+            move_path(temporary, target)
             fsync_directory(unit_release_root)
             committed = True
         finally:
@@ -582,11 +579,11 @@ def _find_release(root: Path, release_id: str) -> dict[str, Any]:
     validate_regular_tree(units_root)
     matches: list[Path] = []
     for unit_root in units_root.iterdir():
-        if unit_root.is_symlink() or not unit_root.is_dir():
+        if is_link(unit_root) or not unit_root.is_dir():
             raise IntegrityError(f"invalid entry in release units root: {unit_root}")
         require_safe_id(unit_root.name, "release unit directory")
         candidate = unit_root / release_id
-        if candidate.exists() or candidate.is_symlink():
+        if candidate.exists() or is_link(candidate):
             matches.append(candidate)
     if not matches:
         raise ProductionError(f"release does not exist: {release_id}")
@@ -633,7 +630,7 @@ def _validate_production_at(
     *,
     expected_version_id: str | None = None,
 ) -> dict[str, Any]:
-    if version_root.is_symlink() or not version_root.is_dir():
+    if is_link(version_root) or not version_root.is_dir():
         raise IntegrityError(f"production version root is invalid: {version_root}")
     validate_regular_tree(version_root)
     manifest_path = require_inside(version_root, "production.json", "production manifest")
@@ -778,7 +775,7 @@ def _restore_archived_production(
     """Reuse validated original bytes under the caller's composition lock."""
     _validate_production_at(root, archived, expected_version_id=version_id)
     digest = tree_digest(archived)
-    if target.exists() or target.is_symlink():
+    if target.exists() or is_link(target):
         validated = _validate_production_at(root, target, expected_version_id=version_id)
         if tree_digest(target) != digest:
             raise IntegrityError("生产内容与既有归档字节不一致")
@@ -791,7 +788,7 @@ def _restore_archived_production(
         if tree_digest(candidate) != digest or tree_digest(archived) != digest:
             raise IntegrityError("生产归档在复用过程中发生变化")
         fsync_tree(candidate)
-        os.rename(candidate, target)
+        move_path(candidate, target)
         fsync_directory(target.parent)
     finally:
         _safe_remove_temporary(temporary, target.parent, ".pal-production-")
@@ -832,9 +829,9 @@ def compose_production(library_root: Path, release_ids: Sequence[str]) -> dict[s
             "archived production version",
             must_exist=False,
         )
-        if archived.exists() or archived.is_symlink():
+        if archived.exists() or is_link(archived):
             return _restore_archived_production(root, archived, target, version_id)
-        if target.exists() or target.is_symlink():
+        if target.exists() or is_link(target):
             validated = _validate_production_at(
                 root,
                 target,
@@ -905,7 +902,7 @@ def compose_production(library_root: Path, release_ids: Sequence[str]) -> dict[s
             confirmed_releases.sort(key=lambda item: item["unit_id"].encode("utf-8"))
             if _production_fingerprint(confirmed_releases) != _production_fingerprint(releases):
                 raise IntegrityError("release closure changed during production composition")
-            os.rename(temporary, target)
+            move_path(temporary, target)
             fsync_directory(versions_root)
             committed = True
         finally:

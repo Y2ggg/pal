@@ -105,8 +105,14 @@ def test_multifile_candidate_rejects_unsafe_or_unowned_entries(
             outside.mkdir()
         (skill_root / "link").symlink_to(outside)
     elif invalid == "fifo":
+        if os.name == "nt":
+            pytest.skip("Windows has no POSIX FIFO filesystem object")
         os.mkfifo(skill_root / "pipe")
     elif invalid == "bad-name":
+        if os.name == "nt":
+            pytest.skip(
+                "Backslash is a Windows separator; aliases covered by native platform tests"
+            )
         (skill_root / "bad\\name").write_bytes(b"unsafe")
     else:
         canonical.unlink()

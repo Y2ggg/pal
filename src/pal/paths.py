@@ -12,6 +12,7 @@ import unicodedata
 from pathlib import Path, PurePosixPath
 
 from .errors import InitializationError, PathSafetyError
+from .platform_support import is_link, validate_windows_path
 
 SAFE_ID_PATTERN = r"^[a-z0-9][a-z0-9._-]*$"
 SAFE_ID = re.compile(SAFE_ID_PATTERN)
@@ -20,6 +21,7 @@ SAFE_ID = re.compile(SAFE_ID_PATTERN)
 def require_safe_id(value: object, label: str) -> str:
     if not isinstance(value, str) or SAFE_ID.fullmatch(value) is None:
         raise PathSafetyError(f"{label} must match {SAFE_ID_PATTERN}")
+    validate_windows_path(Path(value))
     return value
 
 
@@ -37,16 +39,19 @@ def normalize_relative_path(value: object, label: str) -> str:
         raise PathSafetyError(f"{label} contains an unsafe path segment")
     if PurePosixPath(value).as_posix() != value:
         raise PathSafetyError(f"{label} is not a normalized POSIX path")
+    validate_windows_path(Path(value))
     return value
 
 
 def canonical_init_target(path: Path) -> Path:
     """Resolve the target parent while preserving and checking the target leaf."""
 
+    validate_windows_path(path)
     absolute = Path(os.path.abspath(path))
+    validate_windows_path(absolute)
     if absolute == Path(absolute.anchor) or not absolute.name:
         raise InitializationError("library root cannot be a filesystem root")
-    if absolute.is_symlink():
+    if is_link(absolute):
         raise InitializationError(f"library root cannot be a symbolic link: {absolute}")
     try:
         parent = absolute.parent.resolve(strict=True)
@@ -58,8 +63,10 @@ def canonical_init_target(path: Path) -> Path:
 
 
 def canonical_existing_root(path: Path) -> Path:
+    validate_windows_path(path)
     absolute = Path(os.path.abspath(path))
-    if absolute.is_symlink():
+    validate_windows_path(absolute)
+    if is_link(absolute):
         raise PathSafetyError(f"library root cannot be a symbolic link: {absolute}")
     try:
         resolved = absolute.resolve(strict=True)
@@ -82,7 +89,7 @@ def require_inside(
     cursor = root
     for part in relative.split("/"):
         cursor = cursor / part
-        if cursor.is_symlink():
+        if is_link(cursor):
             raise PathSafetyError(f"{label} contains a symbolic link: {cursor}")
     try:
         resolved = cursor.resolve(strict=must_exist)
@@ -111,7 +118,8 @@ def validate_regular_tree(root: Path) -> None:
                 raise PathSafetyError(f"normalized path collision below: {current}")
             normalized.add(normalized_name)
             path = current / name
-            if path.is_symlink():
+            validate_windows_path(path)
+            if is_link(path):
                 raise PathSafetyError(f"library contains a symbolic link: {path}")
             mode = path.stat().st_mode
             if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):

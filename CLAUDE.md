@@ -19,7 +19,7 @@
 - 故障拒绝继续，未知不算健康；锁序 maintenance → publication → activation。
 - 安装通过官方 CLI 与 PAL 状态核查，不靠修改用户全局配置绕过协议。
 - 测试使用临时库，禁止修改真实安装；实机验收需要独立隔离与明确授权。
-- macOS 已验收，其他 POSIX 系统待完整验收，Windows 不支持。CLI 挂载变化须新开会话。
+- macOS 已验收，其他 POSIX 系统待完整验收，Windows 原生支持正在验证。CLI 挂载变化须新开会话。
   Web 仅供本机同源访问，不公开转发。
 
 ## 常用检查与导航

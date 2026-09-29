@@ -138,7 +138,7 @@ def test_prd_tech_001_acc_012_unvalidated_platform_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(library_module, "fcntl", None)
-    with pytest.raises(InitializationError, match="macOS/POSIX"):
+    with pytest.raises(InitializationError, match="filesystem and lock backend"):
         doctor_library(Path("unused"))
 
 

@@ -1175,9 +1175,25 @@ def _v2_production_schemas() -> dict[str, dict[str, Any]]:
 V2_SCHEMA_CATALOG = _v2_production_schemas()
 
 
+# Versioned additive path dialect. Never rewrite a library's sealed v1 catalog.
+PORTABLE_ABSOLUTE_PATH_PATTERN = r"^(?:/[^\u0000-\u001f]*|[A-Za-z]:[\\/][^\u0000-\u001f]*)$"
+
+
+def _portable_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(schema)
+    result["$id"] = result["$id"].replace("/schemas/", "/schemas/portable-1/")
+    result["$defs"]["absolute_path"]["pattern"] = PORTABLE_ABSOLUTE_PATH_PATTERN
+    return result
+
+
+PORTABLE_SCHEMA_CATALOG = {name: _portable_schema(s) for name, s in SCHEMA_CATALOG.items()}
+
+
 def check_catalog() -> None:
     if tuple(SCHEMA_CATALOG) != SCHEMA_FILENAMES:
         raise SchemaValidationError("formal schema catalog order or membership is invalid")
+    for schema in PORTABLE_SCHEMA_CATALOG.values():
+        Draft202012Validator.check_schema(schema)
     identifiers: set[str] = set()
     for filename, schema in SCHEMA_CATALOG.items():
         try:
@@ -1203,7 +1219,7 @@ def check_catalog() -> None:
 
 def schema_document(filename: str) -> dict[str, Any]:
     try:
-        return deepcopy(SCHEMA_CATALOG[filename])
+        return deepcopy(PORTABLE_SCHEMA_CATALOG[filename])
     except KeyError as exc:
         raise SchemaValidationError(f"unknown formal schema: {filename}") from exc
 
@@ -1219,7 +1235,7 @@ def schema_digest(filename: str) -> str:
 def validate_instance(filename: str, instance: Any) -> None:
     schema = schema_document(filename)
     if isinstance(instance, dict) and instance.get("schema_version") == 2:
-        schema = deepcopy(V2_SCHEMA_CATALOG.get(filename, schema))
+        schema = _portable_schema(V2_SCHEMA_CATALOG.get(filename, schema))
     try:
         Draft202012Validator(schema, format_checker=FormatChecker()).validate(instance)
     except ValidationError as exc:
@@ -1231,7 +1247,7 @@ def validate_instance(filename: str, instance: Any) -> None:
 
 def validate_config_instance(filename: str, instance: Any) -> None:
     try:
-        schema = deepcopy(CONFIG_ROOT_SCHEMA_CATALOG[filename])
+        schema = _portable_schema(CONFIG_ROOT_SCHEMA_CATALOG[filename])
     except KeyError as exc:
         raise SchemaValidationError(f"unknown config-root schema: {filename}") from exc
     try:

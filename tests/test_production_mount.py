@@ -6,7 +6,6 @@ ACC-008, ACC-011, ACC-012.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import shutil
 from contextlib import contextmanager
@@ -17,6 +16,7 @@ import pytest
 
 import pal.cli as cli_module
 import pal.production_mount as production_mount_module
+from pal import locking as fcntl
 from pal.adapters import launch_creation_entry
 from pal.compatibility import CliCompatibility
 from pal.errors import CreationError, PALError, ProductionError
