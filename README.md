@@ -101,6 +101,10 @@ Web 支持详情与文件浏览、夜间模式、窄屏和统一操作反馈。�
 运行包用户解压新版，再运行其安装脚本。uv 用户在下载的新源码根目录安装，
 或将 `.` 换成本地新版 wheel 路径：
 
+运行包升级须沿用原安装目录和命令目录；使用过自定义目录时继续传入原
+`PAL_INSTALL_DIR`/`PAL_BIN_DIR`，Windows 继续使用原 `-InstallDir`。需要迁移位置时，先从原
+安装目录运行卸载脚本，再按新位置安装。
+
 ```sh
 uv tool install --force --reinstall .
 pal web

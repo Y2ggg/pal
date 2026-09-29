@@ -54,6 +54,8 @@ macOS/Linux 用 `shasum -a 256 文件名` 或 `sha256sum 文件名`；Windows �
 
 通过 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`（POSIX），或安装脚本的 `-InstallDir`（Windows）可调整程序位置。
 卸载使用**安装目录内**的 `uninstall.sh` / `uninstall.ps1`；库、配置及 CLI 插件保留。
+升级须沿用原安装目录和命令目录：POSIX 继续传入原 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`，Windows
+继续使用原 `-InstallDir`。需要迁移位置时，先从原安装目录卸载，再按新位置安装。
 先用对应配置和端口停止所有 PAL Web 服务。不要混用 uv 和运行包覆盖同一命令；切换前先用原工具卸载程序。
 
 源码/wheel 方式需要 Python 3.11+、uv。在源码根目录运行 `uv tool install .`，或将 `.` 替换为
@@ -190,6 +192,8 @@ Skill 卡片名称和“查看详情”打开完整概览/文件页；有未发�
 
 若 Web 正在运行，先在另一终端执行 `pal web stop`；自定义端口/配置时带上对应参数。没有
 运行则跳过停止步骤。然后从新版源码根目录执行，或将 `.` 换成本地新版 wheel：
+
+运行包用户改为重新运行新版安装脚本，并沿用上文所述的原安装目录和命令目录；迁移位置先卸载原安装。
 
 ```sh
 uv tool install --force --reinstall .

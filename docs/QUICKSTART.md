@@ -72,6 +72,9 @@ pal web
 如果 Web 正在运行，先在另一终端执行 `pal web stop`；没有运行则跳过。再在新版源码根目录
 运行（或将 `.` 换成本地新版 wheel）；运行包用户重新运行新版安装脚本：
 
+运行包升级须沿用原安装目录和命令目录；自定义过 POSIX 的 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`
+或 Windows 的 `-InstallDir` 时继续使用原值。需要迁移位置时，先从原安装目录卸载，再按新位置安装。
+
 ```sh
 uv tool install --force --reinstall .
 pal web
