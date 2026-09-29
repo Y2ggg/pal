@@ -51,7 +51,7 @@ def fsync_directory(path: Path) -> None:
     if os.name == "nt":
         # Windows has no directory fsync; move_path uses same-volume WRITE_THROUGH.
         return
-    descriptor = os.open(path, os.O_RDWR if os.name == "nt" else os.O_RDONLY)
+    descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
     finally:

@@ -130,3 +130,47 @@ def test_windows_rejects_junction_ancestor(tmp_path):
             canonical_init_target(link / "library")
     finally:
         link.rmdir()
+
+
+@pytest.mark.parametrize(
+    "cli,entry", [("claude", "bin/claude.exe"), ("claude", "cli.js"), ("codex", "bin/codex.js")]
+)
+def test_windows_npm_bin_resolution_preserves_arguments(tmp_path, monkeypatch, cli, entry):
+    import shutil
+
+    from pal.platform_support import windows_command
+
+    package_name = {"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex"}[cli]
+    package = tmp_path / "node_modules" / package_name
+    target = package / entry
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"test entry only, never executed")
+    (package / "package.json").write_text(json.dumps({"name": package_name, "bin": {cli: entry}}))
+    wrapper = tmp_path / f"{cli}.CMD"
+    node = str(tmp_path / "node.exe")
+    monkeypatch.setattr(shutil, "which", lambda name: node if name == "node.exe" else str(wrapper))
+    args = [cli, "plugin", "validate", "C:/中文 & %PATH%/a b"]
+    result = windows_command(args)
+    assert (
+        result
+        == ([str(target.resolve())] if entry.endswith(".exe") else [node, str(target.resolve())])
+        + args[1:]
+    )
+
+
+def test_windows_npm_rejects_bin_outside_package(tmp_path, monkeypatch):
+    import shutil
+
+    from pal.errors import CompatibilityError
+    from pal.platform_support import windows_command
+
+    package = tmp_path / "node_modules/@openai/codex"
+    package.mkdir(parents=True)
+    outside = tmp_path / "escape.exe"
+    outside.write_bytes(b"must not execute")
+    (package / "package.json").write_text(
+        json.dumps({"name": "@openai/codex", "bin": {"codex": str(outside)}})
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: str(tmp_path / "codex.cmd"))
+    with pytest.raises(CompatibilityError):
+        windows_command(["codex", "--version"])

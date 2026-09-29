@@ -1,8 +1,9 @@
 """Formal PAL JSON Schema catalogs.
 
-The library catalog is the implementation source for the 14 schemas sealed by
-the technical-design review. ``pal init`` materializes those exact schemas into
-a new library's ``schemas/v1`` directory. Config-root records use a separate
+The sealed v1 catalog remains byte-identical for existing libraries. New
+libraries materialize the versioned portable-1 catalog in ``schemas/v1``;
+registry IDs and exact digests distinguish the two complete catalogs.
+Config-root records use a separate
 catalog so extending PAL user configuration never changes existing library
 bytes or the v1 doctor contract.
 

@@ -51,9 +51,9 @@ def _is_blocked(command: Any) -> tuple[str, ...] | None:
         and _executable_name(command) == "node"
     ):
         entry = str(command[1]).replace("\\", "/")
-        if entry.endswith("/@openai/codex/bin/codex.js"):
+        if "/node_modules/@openai/codex/" in entry:
             command = ["codex", *command[2:]]
-        elif entry.endswith("/@anthropic-ai/claude-code/cli.js"):
+        elif "/node_modules/@anthropic-ai/claude-code/" in entry:
             command = ["claude", *command[2:]]
     if _executable_name(command) not in BLOCKED_TARGETS:
         return None

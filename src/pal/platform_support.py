@@ -84,24 +84,45 @@ def command_for_platform(arguments: list[str]) -> list[str]:
     """Resolve Windows native executables or known npm entrypoints without cmd.exe."""
     if os.name != "nt" or not arguments:
         return arguments
+    return windows_command(arguments)
+
+
+def windows_command(arguments: list[str]) -> list[str]:
+    """Resolve a native binary or the bin declared by an official npm package."""
+    import json
     import shutil
 
     from .errors import CompatibilityError
 
     executable = shutil.which(arguments[0])
     if executable is None:
-        return arguments  # Let the caller report the missing program.
+        return arguments
     if Path(executable).suffix.lower() not in {".cmd", ".bat"}:
         return [executable, *arguments[1:]]
     name = Path(executable).stem.lower()
-    entrypoints = {
-        "codex": "@openai/codex/bin/codex.js",
-        "claude": "@anthropic-ai/claude-code/cli.js",
-    }
-    entry = Path(executable).parent / "node_modules" / entrypoints.get(name, "__unsupported__")
-    node = shutil.which("node.exe")
-    if name in entrypoints and entry.is_file() and node:
-        return [node, str(entry), *arguments[1:]]
+    packages = {"codex": "@openai/codex", "claude": "@anthropic-ai/claude-code"}
+    package = Path(executable).parent / "node_modules" / packages.get(name, "__unsupported__")
+    try:
+        metadata = json.loads((package / "package.json").read_text(encoding="utf-8"))
+        if (
+            name not in packages
+            or not isinstance(metadata, dict)
+            or metadata.get("name") != packages[name]
+        ):
+            raise ValueError("unexpected npm package")
+        entries = metadata.get("bin", {})
+        relative = entries.get(name) if isinstance(entries, dict) else entries
+        if not isinstance(relative, str):
+            raise ValueError("npm entry missing")
+        entry = (package / relative).resolve(strict=True)
+        entry.relative_to(package.resolve(strict=True))
+        if entry.is_file() and entry.suffix.lower() == ".exe":
+            return [str(entry), *arguments[1:]]
+        node = shutil.which("node.exe")
+        if entry.is_file() and entry.suffix.lower() in {".js", ".cjs", ".mjs"} and node:
+            return [node, str(entry), *arguments[1:]]
+    except (OSError, ValueError, TypeError):
+        pass
     raise CompatibilityError(
         f"无法安全启动 Windows CLI 包装脚本：{executable}；请使用官方原生安装或标准 npm 安装"
     )
@@ -116,7 +137,7 @@ def validate_windows_path(path: Path) -> None:
     if path.drive and (len(path.drive) != 2 or path.drive[1] != ":" or not path.is_absolute()):
         raise PathSafetyError("PAL requires a local Windows drive, not UNC/device paths")
     for part in path.parts[1:] if path.anchor else path.parts:
-        stem = part.split(".")[0].upper()
+        stem = part.split(".")[0].rstrip(" ").upper()
         if (
             part.endswith((".", " "))
             or any(c in '<>:"|?*' or ord(c) < 32 for c in part)
