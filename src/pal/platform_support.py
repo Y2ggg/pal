@@ -128,7 +128,7 @@ def windows_command(arguments: list[str]) -> list[str]:
     )
 
 
-def validate_windows_path(path: Path) -> None:
+def validate_windows_path(path: Path, *, check_links: bool = True) -> None:
     """Local drive paths only; reject aliases before filesystem normalization."""
     if os.name != "nt":
         return
@@ -145,6 +145,8 @@ def validate_windows_path(path: Path) -> None:
             or stem in {f"{prefix}{n}" for prefix in ("COM", "LPT") for n in "123456789¹²³"}
         ):
             raise PathSafetyError(f"unsupported Windows path component: {part}")
+    if not check_links:
+        return
     cursor = Path(path.anchor)
     for part in path.parts[1:] if path.anchor else path.parts:
         cursor /= part

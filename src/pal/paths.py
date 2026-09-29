@@ -21,7 +21,7 @@ SAFE_ID = re.compile(SAFE_ID_PATTERN)
 def require_safe_id(value: object, label: str) -> str:
     if not isinstance(value, str) or SAFE_ID.fullmatch(value) is None:
         raise PathSafetyError(f"{label} must match {SAFE_ID_PATTERN}")
-    validate_windows_path(Path(value))
+    validate_windows_path(Path(value), check_links=False)
     return value
 
 
@@ -39,7 +39,7 @@ def normalize_relative_path(value: object, label: str) -> str:
         raise PathSafetyError(f"{label} contains an unsafe path segment")
     if PurePosixPath(value).as_posix() != value:
         raise PathSafetyError(f"{label} is not a normalized POSIX path")
-    validate_windows_path(Path(value))
+    validate_windows_path(Path(value), check_links=False)
     return value
 
 
@@ -118,7 +118,7 @@ def validate_regular_tree(root: Path) -> None:
                 raise PathSafetyError(f"normalized path collision below: {current}")
             normalized.add(normalized_name)
             path = current / name
-            validate_windows_path(path)
+            validate_windows_path(path, check_links=False)
             if is_link(path):
                 raise PathSafetyError(f"library contains a symbolic link: {path}")
             mode = path.stat().st_mode

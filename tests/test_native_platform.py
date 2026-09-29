@@ -174,3 +174,23 @@ def test_windows_npm_rejects_bin_outside_package(tmp_path, monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda name: str(tmp_path / "codex.cmd"))
     with pytest.raises(CompatibilityError):
         windows_command(["codex", "--version"])
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junctions")
+def test_windows_relative_identifiers_do_not_inspect_unrelated_cwd(tmp_path, monkeypatch):
+    from pal.paths import require_safe_id
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tmp_path / "skill-name"
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(outside)], check=True, capture_output=True
+    )
+    try:
+        monkeypatch.chdir(tmp_path)
+        assert require_safe_id("skill-name", "unit") == "skill-name"
+        assert normalize_relative_path("skill-name/file.txt", "payload") == "skill-name/file.txt"
+        with pytest.raises(PathSafetyError, match="reparse"):
+            canonical_init_target(link / "library")
+    finally:
+        link.rmdir()

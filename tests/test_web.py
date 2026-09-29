@@ -332,7 +332,8 @@ def _request(base: str, path: str, *, method: str = "GET", body: dict[str, objec
     if method == "POST":
         headers["X-PAL-Action"] = "confirm"
     request = Request(f"{base}{path}", data=data, headers=headers, method=method)
-    with urlopen(request, timeout=3) as response:
+    # Durable publication includes fsync; parallel CI has no three-second SLA.
+    with urlopen(request, timeout=30) as response:
         return response.status, json.loads(response.read().decode("utf-8"))
 
 
