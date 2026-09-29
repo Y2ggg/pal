@@ -267,7 +267,7 @@ def test_interrupted_cleanup_blocks_writes_and_resumes(collection, monkeypatch, 
             "creation": ".pal/transactions/creation",
             "development": "development/units/alpha",
         }[stage]
-        if target in str(path) and path.is_file() and not failed:
+        if target in path.as_posix() and path.is_file() and not failed:
             original(path)
             failed = True
             raise OSError("injected cleanup interruption")
@@ -338,7 +338,7 @@ def test_owned_claude_cache_is_removed_and_other_cache_preserved(
     if interrupted:
 
         def fail(path):
-            if "plugins/cache" in str(path) and path.is_file():
+            if "plugins/cache" in path.as_posix() and path.is_file():
                 original(path)
                 raise OSError("cache interruption")
             original(path)

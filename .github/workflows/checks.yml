@@ -49,7 +49,7 @@ jobs:
           selected = files if shard == 'all' else files[int(shard)::2]
           assert selected
           print('Test files:', selected, flush=True)
-          sys.exit(subprocess.run(['uv', 'run', 'pytest', '-n', '4', '-v', '--durations=15', *selected]).returncode)
+          sys.exit(subprocess.run(['uv', 'run', 'pytest', '-n', '4', '-v', '--maxfail=1', '--durations=15', *selected]).returncode)
       - run: uv build
 
   bundle:

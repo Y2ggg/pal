@@ -69,7 +69,7 @@ def test_creation_reads_real_version_enabled_and_full_inventory(creation_install
     (cache / "unexpected.md").write_text("drift")
     assert check()["state"] == "drift"
     assert monitor._creation_status(cli, config, [], [market])["state"] == "missing"
-    market["root" if cli == "codex" else "path"] = "/tmp/foreign"
+    market["root" if cli == "codex" else "path"] = str(cache.parent / "foreign")
     assert check()["state"] == "conflict"
 
 
@@ -158,7 +158,7 @@ def test_mount_missing_disabled_drift_and_foreign_source(mounted, cli):
     skill = next(cache.rglob("SKILL.md"))
     skill.write_text("changed")
     assert check()["state"] == "drift"
-    market["root" if cli == "codex" else "path"] = "/tmp/foreign"
+    market["root" if cli == "codex" else "path"] = str(cache.parent / "foreign")
     assert check()["state"] == "conflict"
 
 

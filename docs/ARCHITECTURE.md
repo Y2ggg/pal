@@ -63,5 +63,6 @@ Windows 没有 POSIX 目录 fsync，不声明两者具有完全等价的断电�
 这不是跨操作系统直接移动库的能力。
 
 `packaging/` 在各 OS 原生构建运行包，包含源码副本以保持运行构建指纹的有效性。
-启动外部厂商 CLI 时清除冻结程序注入的动态库查找环境；Windows 标准 npm 包通过 Node 官方
-入口脚本启动，避免把用户路径拼接到 cmd.exe 命令串。
+启动外部厂商 CLI 时清除冻结程序注入的动态库查找环境。Windows 标准 npm 包按 package.json
+的 bin 声明解析入口：原生 exe 直接执行，JavaScript 通过 Node 执行；拒绝越界入口，
+避免把用户路径拼接到 cmd.exe 命令串。

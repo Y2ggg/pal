@@ -5,6 +5,7 @@ Traceability: PRD-USE-001, PRD-USE-002; ACC-009, ACC-010, ACC-012.
 
 from __future__ import annotations
 
+import os
 import shlex
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,11 @@ import pytest
 
 from pal.errors import UsageError
 from pal.io import sha256_file
-from pal.usage_events import inspect_claude_events, inspect_codex_events
+from pal.usage_events import (
+    _codex_literal_read_path,
+    inspect_claude_events,
+    inspect_codex_events,
+)
 
 
 def event_context(tmp_path: Path, cli_id: str) -> dict[str, Any]:
@@ -340,7 +345,10 @@ def test_codex_does_not_attribute_other_sources_to_pal(tmp_path: Path, case: str
 def test_codex_exact_read_handles_quoted_paths_and_shell_wrappers(
     tmp_path: Path, reader: str, wrapper: str | None
 ) -> None:
-    context = event_context(tmp_path / "space and apostrophe's (directory) [literal]*?", "codex")
+    # Windows cannot store * or ? in filenames; exercise those in the parser
+    # separately, then verify real content using all legal punctuation on this OS.
+    name = "space and apostrophe's (directory) [literal]" + ("" if os.name == "nt" else "*?")
+    context = event_context(tmp_path / name, "codex")
     candidate = context["skills"][0]
     command = f"{reader} {shlex.quote(candidate['runtime_skill_path'])}"
     if wrapper:
@@ -348,6 +356,11 @@ def test_codex_exact_read_handles_quoted_paths_and_shell_wrappers(
     events = codex_events(context)
     events[1]["item"]["command"] = command
     assert inspect_codex_events(events, context).selections[0].candidate == candidate
+    lexical_path = str(tmp_path / "literal*?" / "SKILL.md")
+    lexical_command = f"{reader} {shlex.quote(lexical_path)}"
+    if wrapper:
+        lexical_command = f"{wrapper} -lc {shlex.quote(lexical_command)}"
+    assert _codex_literal_read_path(lexical_command) == lexical_path
 
 
 @pytest.mark.parametrize(
@@ -375,7 +388,12 @@ def test_codex_unquoted_shell_metacharacters_cannot_prove_literal_source(
     tmp_path: Path, suffix: str
 ) -> None:
     """PRD-USE-002 / ACC-012: shell 展开或文件名中的 # 不能改变来源匹配。"""
-    root = tmp_path if suffix.startswith("#") else tmp_path / f"binding{suffix}"
+    illegal_on_windows = os.name == "nt" and suffix in {"*", "?"}
+    root = (
+        tmp_path
+        if suffix.startswith("#")
+        else tmp_path / f"binding{'' if illegal_on_windows else suffix}"
+    )
     context = event_context(root, "codex")
     events = codex_events(context)
     path = context["skills"][0]["runtime_skill_path"]
@@ -383,7 +401,12 @@ def test_codex_unquoted_shell_metacharacters_cannot_prove_literal_source(
         foreign = Path(path + suffix)
         foreign.write_bytes(Path(path).read_bytes())
         path = str(foreign)
+    path = Path(path).as_posix()
+    if illegal_on_windows:
+        path = path.replace("/binding/", f"/binding{suffix}/")
     events[1]["item"]["command"] = f"cat {path}"
+    if not suffix.startswith("#"):
+        assert _codex_literal_read_path(f"cat {path}") is None
     assert inspect_codex_events(events, context).selections == ()
 
 
