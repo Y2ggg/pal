@@ -3,6 +3,13 @@ name: 检查
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 验证范围（仅打包变更可复用相同源码的全量结果）
+        type: choice
+        default: all
+        options: [all, test, bundle]
 
 env:
   PYTHONUTF8: "1"
@@ -12,6 +19,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'bundle'
     name: ${{ matrix.os }} / Python ${{ matrix.python }} / ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
@@ -53,6 +61,7 @@ jobs:
       - run: uv build
 
   bundle:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'test'
     name: 安装包 / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30

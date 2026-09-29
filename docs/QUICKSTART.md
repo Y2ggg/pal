@@ -3,7 +3,7 @@
 产品名称为 PAL · 个人能力库（Personal Ability Library）；命令、包名、插件调用名和配置路径
 统一使用 PAL 标识。控制台已采用完整 pal 字标和明暗主题标识。
 
-适用：PAL 0.3.0。三平台发行验收正在进行，最终结果以 Release 为准。
+适用：PAL 0.3.0；提供 macOS、Linux 与原生 Windows 运行包。
 需要已安装并配置的 Claude Code 与 Codex；PAL 运行包自带 Python，无需 uv。
 代码最低 CLI 门槛为 Claude Code 2.1.205、Codex 0.147.0；版本达标仍需能力探针通过。
 

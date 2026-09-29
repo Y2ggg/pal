@@ -1,10 +1,16 @@
 #!/bin/sh
 set -eu
 install_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-if [ ! -f "$install_dir/.pal-install" ]; then
-  echo '请运行安装目录内的 uninstall.sh；此目录不是已安装的 PAL。' >&2; exit 1
+marker="$install_dir/.pal-install"
+if [ ! -f "$marker" ] || [ "$(wc -l < "$marker" | tr -d ' ')" -ne 3 ] ||
+   [ "$(sed -n '1p' "$marker")" != 'PAL-INSTALL-V1' ] ||
+   [ "$(sed -n '2p' "$marker")" != "$install_dir" ] ||
+   [ ! -x "$install_dir/runtime/pal" ] || [ ! -f "$install_dir/BUILD.json" ] ||
+   [ ! -f "$install_dir/uninstall.sh" ]; then
+  echo '安装记录未知或已损坏，拒绝卸载；请核对安装目录。' >&2; exit 1
 fi
-bin_dir=$(cat "$install_dir/.pal-install")
+bin_dir=$(sed -n '3p' "$marker")
+case "$bin_dir" in /*) ;; *) echo '安装记录中的命令目录无效，拒绝卸载。' >&2; exit 1;; esac
 stop_output=$("$install_dir/runtime/pal" web stop 2>&1) || {
     case "$stop_output" in *'没有可关闭的 PAL Web 服务记录'*) ;; *) printf '%s\n' "$stop_output" >&2; exit 1;; esac
   }

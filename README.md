@@ -13,7 +13,7 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 在本地 Web 控制台查看内容、发布、挂载和维护。开发中的修改与正在使用的内容相互独立，
 什么时候发布、什么时候交给 CLI 使用，由你决定。
 
-当前候选版本 **0.3.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
+当前版本 **0.3.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
 配置路径使用 PAL 专属目录。
 
 ## 可以做什么
@@ -38,7 +38,6 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 | macOS Apple Silicon / Intel | `pal-0.3.0-macos-arm64.tar.gz` / `pal-0.3.0-macos-x86_64.tar.gz` | `sh install.sh` |
 | Linux x64 | `pal-0.3.0-linux-x86_64.tar.gz` | `sh install.sh` |
 
-0.3.0 当前正在进行三平台发行验收，尚未创建正式 Release；此表是待验交付清单。
 macOS/Linux 的命令目录为 `~/.local/bin`，请加入 PATH；Windows 安装器设置当前用户 PATH，
 新开终端生效。随后运行 `pal --version` 和 `pal quickstart`。
 运行包未做 Apple 公证或 Windows 签名；系统要求、验证边界和卸载见[使用手册](docs/USER-GUIDE.md)。

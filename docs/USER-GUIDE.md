@@ -27,7 +27,7 @@ PAL 配置目录保存默认库、挂载、安装与恢复状态。
 
 ## 安装与首次设置
 
-PAL 0.3.0 增加原生 Windows；三平台验收进行中，当前不把候选当作正式发行。
+PAL 0.3.0 支持 macOS、Linux 与原生 Windows；不依赖 WSL。
 运行包自带 Python 及运行依赖，不包含或自动认证 Claude Code/Codex。两端 CLI 必须自行安装，
 实际模型任务需要认证或 provider 配置。PAL 会检查版本、官方插件命令和行为。
 

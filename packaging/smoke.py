@@ -17,6 +17,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def run_installer(bundle: Path, program: Path, environment: dict[str, str], *, check: bool):
+    if os.name == "nt":
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bundle / "install.ps1"),
+            "-InstallDir",
+            str(program),
+        ]
+    else:
+        command = ["sh", str(bundle / "install.sh")]
+    return subprocess.run(command, env=environment, check=check, capture_output=not check)
+
+
+def run_uninstaller(script: Path, environment: dict[str, str], *, check: bool):
+    if os.name == "nt":
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ]
+    else:
+        command = ["sh", str(script)]
+    return subprocess.run(command, env=environment, check=check, capture_output=not check)
+
+
 def main():
     (archive,) = (ROOT / "dist/bundles").glob("pal-*")
     with tempfile.TemporaryDirectory(prefix="pal package 中文 ") as temporary:
@@ -43,23 +75,55 @@ def main():
         )
         for key in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):
             Path(environment[key]).mkdir()
-        if os.name == "nt":
-            subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(bundle / "install.ps1"),
-                    "-InstallDir",
-                    str(program),
-                ],
-                env=environment,
-                check=True,
-            )
-        else:
-            subprocess.run(["sh", str(bundle / "install.sh")], env=environment, check=True)
+
+        fake = root / "not-a-pal-install"
+        fake.mkdir()
+        sentinel = fake / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        (fake / ".pal-install").write_text("PAL-INSTALL-V1\nwrong\nwrong\n", encoding="utf-8")
+        fake_environment = {**environment, "PAL_INSTALL_DIR": str(fake)}
+        rejected = run_installer(bundle, fake, fake_environment, check=False)
+        assert rejected.returncode != 0
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+        uninstaller_name = "uninstall.ps1" if os.name == "nt" else "uninstall.sh"
+        fake_uninstaller = fake / uninstaller_name
+        fake_uninstaller.write_bytes((bundle / uninstaller_name).read_bytes())
+        rejected = run_uninstaller(fake_uninstaller, fake_environment, check=False)
+        assert rejected.returncode != 0
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+        damaged = root / "damaged-pal-install"
+        damaged.mkdir()
+        damaged_bin = damaged / "runtime"
+        damaged_sentinel = damaged / "keep.txt"
+        damaged_sentinel.write_text("keep", encoding="utf-8")
+        damaged_uninstaller = damaged / uninstaller_name
+        damaged_uninstaller.write_bytes((bundle / uninstaller_name).read_bytes())
+        (damaged / "BUILD.json").write_text("{}\n", encoding="utf-8")
+        (damaged / ".pal-install").write_text(
+            f"PAL-INSTALL-V1\n{damaged.resolve()}\n{damaged_bin.resolve()}\n", encoding="utf-8"
+        )
+        damaged_environment = {
+            **environment,
+            "PAL_INSTALL_DIR": str(damaged),
+            "PAL_BIN_DIR": str(damaged_bin),
+        }
+        rejected = run_installer(bundle, damaged, damaged_environment, check=False)
+        assert rejected.returncode != 0
+        rejected = run_uninstaller(damaged_uninstaller, damaged_environment, check=False)
+        assert rejected.returncode != 0
+        assert damaged_sentinel.read_text(encoding="utf-8") == "keep"
+
+        run_installer(bundle, program, environment, check=True)
+        if os.name != "nt":
+            original_link = Path(environment["PAL_BIN_DIR"]) / "pal"
+            changed_environment = {**environment, "PAL_BIN_DIR": str(root / "other-bin")}
+            rejected = run_installer(bundle, program, changed_environment, check=False)
+            assert rejected.returncode != 0
+            assert original_link.is_symlink()
+            assert original_link.resolve() == (program / "runtime/pal").resolve()
+        Path(environment["PAL_CONFIG_ROOT"]).mkdir()
+        run_installer(bundle, program, environment, check=True)
         executable = program / "runtime" / ("pal.exe" if os.name == "nt" else "pal")
 
         def run(*arguments):
@@ -163,21 +227,7 @@ def main():
                 server.terminate()
                 server.wait(timeout=10)
             server.stderr.close()
-        if os.name == "nt":
-            subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(program / "uninstall.ps1"),
-                ],
-                env=environment,
-                check=True,
-            )
-        else:
-            subprocess.run(["sh", str(program / "uninstall.sh")], env=environment, check=True)
+        run_uninstaller(program / uninstaller_name, environment, check=True)
         assert not program.exists()
         assert (library / "library.json").is_file()
         assert (root / "config").is_dir()

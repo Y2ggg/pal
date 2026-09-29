@@ -35,6 +35,10 @@ CI 另安装固定版本的官方 Claude Code 与 Codex，并用 `packaging/smok
 验证隔离 Quickstart、系统插件与业务插件安装、消费文件校验。它不登录或调用模型，不能记作
 模型任务验收。不能给 CI 配置作者本机凭据，也不能覆盖用户正式库。
 
+工作流支持手动选择 `all`、`test`、`bundle`。只有安装器或打包内容变更时，可仅复验四包；
+前提是对先前已通过的提交逐文件确认 `src/`、`tests/`、pyproject.toml 与 uv.lock 完全一致，
+并在发行记录列出两次验证的真实提交。源码或测试变化必须重新完成对应全量门禁。
+
 ## 发行内容与审查
 
 - Windows x64 zip、macOS arm64/x86_64 tar.gz、Linux x64 tar.gz；每包包含运行时、安装/卸载脚本、
