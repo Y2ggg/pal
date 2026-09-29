@@ -1,54 +1,60 @@
-# 发布流程
+# 版本与发布
 
-本文件面向维护者。公开仓库、发布标签与包索引上传需要单独确认；本地构建成功不等于已发布。
+PAL 使用现有公开仓库 [Y2ggg/pal](https://github.com/Y2ggg/pal)，正常保留 Git 历史。
+0.2.x 是内部交付与历史公开候选，未创建正式 tag/Release；跨平台首次发行编号为 0.3.0。
 
-## 候选检查
+## 版本规则
 
-1. 将 README、快速开始、使用手册和维护说明逐项对照当前实现：入口、参数、三层动作、
-   失败/取消、升级、备份及验证边界。确认版本一致、许可齐全；链接有效不能代替内容正确。
-   历史结果须标明原版本与复用范围，不能改写成当前新测。
-2. 同步 `pyproject.toml`、`__init__.py` 与锁文件，运行格式检查、静态检查和完整测试。
-3. 从干净候选目录构建 wheel/sdist，检查清单、源码一致性、许可证及无个人路径；sdist 必须
-   包含 `uv.lock`，解压后实际执行 `uv sync --locked --extra test`。归档元信息也需去除本机
-   用户名、uid/gid 和本机时间戳，清理后重新生成文件摘要。
-4. 扫描候选源码与 Git 历史中的凭据，审查依赖漏洞和许可。扫描通过不等于绝对无漏洞。
-5. 在隔离环境安装 wheel，验证帮助、版本、初始化、内容校验和 Web。真实 CLI 验收使用隔离
-   配置与显式授权，保存去除个人数据后的结论。
-6. CI 的 action 固定到完整提交 SHA；附注标签需先解析到 commit，不能只复制标签对象 SHA。
-   记录实际平台/Python/CLI 版本和验证限制。尚未跑过的 CI 或平台不能标为通过。
+- 已发布的 `vX.Y.Z` 标签与同名资产不可覆盖。发布后的修复使用新 PATCH。
+- 0.x 中，新增平台或不兼容行为使用新 MINOR；不为品牌或整理历史而重建仓库。
+- 程序版本在 pyproject.toml、`pal.__version__`、uv.lock 及当前用户文档保持一致。
+- 创建入口修订（本版 native.8）、库协议与程序版本独立；升级程序不自动改写库与旧投影。
 
-以下是在项目根目录执行的检查与原始构建示例；`uv build` 的输出仍须完成上面的归档清理、
-包检查和摘要生成，不能直接据此认定可上传：
+## 候选门禁
 
 ```sh
-uv sync --locked --extra test
-uv run ruff format --check src tests
-uv run ruff check src tests
-uv run pytest
+uv sync --locked --extra test --extra bundle
+uv run ruff format --check src tests packaging
+uv run ruff check src tests packaging
+uv run pytest -n 4
 uv build
+uv run python packaging/build.py
+uv run python packaging/smoke.py
 ```
 
-发行安装验证用 `uv tool install --force --reinstall ./pal-0.2.4-py3-none-any.whl`
-（替换为待验 wheel 的实际路径），或在独立虚拟环境用 `uv pip`
-安装。不要覆盖用户业务库来制造“首次使用”环境。源码压缩包应包含用户文档、自动化测试与
-浏览器脚本；wheel 保持运行所需内容，包含 MIT 许可。
+`-n 4` 仅将独立测试分配到四个进程；串行 `uv run pytest` 仍受支持。旧 POSIX 特有对象用例
+在 Windows 不适用，Windows 另有真实路径/联接点/跨进程锁回归。跳过项须如实列明。
+Windows CI 为缩短磁盘操作较多的回归耗时，将排序后的全部 test_*.py 按序号奇偶拆成两个
+互斥组，两组都通过才算对应 Python 版本全量通过；两个组的并集必须等于完整收集范围。
 
-## 首次公开
+独立运行包固定 Python 3.11.15，在各 OS/架构原生构建，不能把 macOS 二进制当作 Windows/Linux 文件交付。
+CI 覆盖 Windows、macOS、Ubuntu × Python 3.11/3.14，以及四种运行包。对打包产物执行安装、
+版本、多文件创建、发布、doctor、Web 启停、卸载；临时目录包括中文和空格。
 
-现有内部工程历史含工作路径和验收材料，首次公开从审查过的独立源码候选开始，不推送内部
-仓库历史。候选不含用户库、CLI home、provider 配置、原始会话或个人截图。后续在公开仓库
-维护常规 Git 历史，每次更新重新检查新增内容。
+CI 另安装固定版本的官方 Claude Code 与 Codex，并用 `packaging/smoke.py --native-clis`
+验证隔离 Quickstart、系统插件与业务插件安装、消费文件校验。它不登录或调用模型，不能记作
+模型任务验收。不能给 CI 配置作者本机凭据，也不能覆盖用户正式库。
 
-维护者确认仓库归属、名称、公开范围与最终候选后，再创建远端、首次提交和标签。应先启用
-私密漏洞报告，核对 Issues/PR 模板及持续集成状态。CI 只做检查，不包含自动发布或长期密钥。
+工作流支持手动选择 `all`、`test`、`bundle`。只有安装器或打包内容变更时，可仅复验四包；
+前提是对先前已通过的提交逐文件确认 `src/`、`tests/`、pyproject.toml 与 uv.lock 完全一致，
+并在发行记录列出两次验证的真实提交。源码或测试变化必须重新完成对应全量门禁。
 
-当前尚未声明 PyPI 上的包名可用，也没有设置索引上传。优先通过仓库源码与 Release wheel
-提供安装；如需发布 PyPI，应单独核实名称归属和认证方式，并更新真实项目链接。
+## 发行内容与审查
 
-## 发布内容
+- Windows x64 zip、macOS arm64/x86_64 tar.gz、Linux x64 tar.gz；每包包含运行时、安装/卸载脚本、
+  INSTALL.md、BUILD.json 与许可证。当前不产出 MSI、DMG 或系统包管理器软件包。
+- 普通 wheel、sdist、SHA256SUMS、版本说明与真实兼容矩阵。包内版本必须一致。
+- `packaging/build.py` 使用锁定的 PyInstaller 和依赖，复制 PAL 源码用于构建指纹。
+  删除安装来源 direct_url 元数据，保留运行时及第三方许可；不包含厂商 CLI 或凭据。
+- 逐项复核用户文档、源码行为、平台边界和实测结果；扫描路径/凭据、许可与文件清单。
+  对解压后的 sdist 实测 `uv sync --locked --extra test` 及门禁，不能只检查文件名。
+- CI action 固定完整 commit SHA；保留验证 commit 和运行链接。下载 CI 运行包后重新计算摘要。
+- 尚无 Apple 公证或 Windows Authenticode 签名，不把校验和称为代码签名。公开文档说明这一点。
 
-Release 至少包含版本说明、wheel、sdist、SHA-256 清单和实际兼容矩阵。说明已知限制、升级及
-系统入口更新步骤，避免将旧全量结果写成当前新测。发布后从公开下载地址重新安装验证，
-并检查文档、图片、许可证和安装命令是否可用。
+内部工作区仍通过白名单导出到独立公开树；不推送私有工程历史、个人目录、POC 或原始会话。
+发布到既有远仓后保留正常历史。远端上传和正式发行由维护者授权执行。
+当前没有 PyPI 上传配置，也没有确认 PyPI 包名归属；不以此任务隐含索引发布授权。
 
-`0.2.4` 的发布说明草稿见 [RELEASE-NOTES](RELEASE-NOTES.md)。
+最终候选通过后，在对应公开 commit 创建 `v0.3.0` 和 Release，上传资产及 SHA256SUMS。
+发布后从公开下载地址重新验证文件摘要和安装。若平台门禁未通过，保留候选、如实报告，不能
+发布部分包却宣称已完成三平台交付。

@@ -19,6 +19,7 @@ from typing import Any
 
 from .errors import IntegrityError, UsageError
 from .io import sha256_file
+from .platform_support import is_link
 from .targets import target_driver
 
 
@@ -88,7 +89,7 @@ def _verify_candidate_file(
 ) -> None:
     field = "runtime_skill_path" if verify_runtime else "projected_skill_path"
     path = Path(candidate[field])
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise IntegrityError(f"observed production Skill is unavailable: {path}")
     if sha256_file(path) != candidate["skill_sha256"]:
         raise IntegrityError(f"observed production Skill digest drifted: {path}")

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import IntegrityError, PathSafetyError
+from .platform_support import is_link, move_path
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -47,6 +48,9 @@ def sha256_file(path: Path) -> str:
 
 
 def fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        # Windows has no directory fsync; move_path uses same-volume WRITE_THROUGH.
+        return
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
@@ -58,7 +62,9 @@ def write_new_bytes(path: Path, value: bytes) -> None:
     """Create and durably write a file; never replace an existing file."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    descriptor = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644
+    )
     try:
         with os.fdopen(descriptor, "wb", closefd=False) as handle:
             handle.write(value)
@@ -87,7 +93,7 @@ def atomic_replace_json(path: Path, value: Any) -> None:
             handle.write(formatted_json_bytes(value))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        move_path(temporary, path, replace=True)
         fsync_directory(path.parent)
     finally:
         if temporary.exists():
@@ -105,7 +111,7 @@ def _tree_entries(root: Path) -> list[dict[str, str]]:
         if normalized in normalized_names:
             raise PathSafetyError(f"normalized path collision: {relative}")
         normalized_names.add(normalized)
-        if path.is_symlink():
+        if is_link(path):
             raise PathSafetyError(f"tree contains a symbolic link: {path}")
         mode = path.stat().st_mode
         if stat.S_ISDIR(mode):
@@ -119,7 +125,7 @@ def _tree_entries(root: Path) -> list[dict[str, str]]:
 def tree_digest(root: Path) -> str:
     """Hash the canonical sorted file manifest for a tree."""
 
-    if root.is_symlink() or not root.is_dir():
+    if is_link(root) or not root.is_dir():
         raise PathSafetyError(f"tree root must be a real directory: {root}")
     return sha256_bytes(canonical_json_bytes(_tree_entries(root)))
 
@@ -129,13 +135,13 @@ def fsync_tree(root: Path) -> None:
 
     directories = [root]
     for path in root.rglob("*"):
-        if path.is_symlink():
+        if is_link(path):
             raise PathSafetyError(f"tree contains a symbolic link: {path}")
         mode = path.stat().st_mode
         if stat.S_ISDIR(mode):
             directories.append(path)
         elif stat.S_ISREG(mode):
-            descriptor = os.open(path, os.O_RDONLY)
+            descriptor = os.open(path, os.O_RDWR if os.name == "nt" else os.O_RDONLY)
             try:
                 os.fsync(descriptor)
             finally:

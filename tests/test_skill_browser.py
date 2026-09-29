@@ -58,7 +58,7 @@ def test_file_inventory_and_http_previews_use_validated_payload(browser_library)
     server, thread, base = _running_server(library, config)
     try:
         _, content = _request(base, "/api/skill-file?" + urlencode(query))
-        assert content["content"].startswith("---\nname: files-skill")
+        assert content["content"].splitlines()[:2] == ["---", "name: files-skill"]
         assert content["kind"] == "markdown"
         for filename, kind in [
             ("references/guide.md", "markdown"),

@@ -14,6 +14,7 @@ from .errors import IntegrityError, ProductionError
 from .library import doctor_library, load_json_object
 from .maintenance import lifecycle_write
 from .paths import canonical_existing_root, require_inside, require_safe_id
+from .platform_support import is_link
 from .production_mount import activate_production
 from .publishing import (
     compose_production,
@@ -38,7 +39,7 @@ def _require_no_sync_transition(root: Path, config_root: Path | None) -> None:
 
     library_id = load_json_object(root / "library.json")["library_id"]
     path = _transition_path(resolve_config_root(config_root, create=False), library_id)
-    if path.exists() or path.is_symlink():
+    if path.exists() or is_link(path):
         raise ProductionError("存在未完成的 CLI 同步，请先执行异常恢复")
 
 

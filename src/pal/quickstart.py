@@ -26,6 +26,7 @@ from .errors import PALError, QuickstartCancelled, QuickstartError, UsageError
 from .integrity import check_library_contents
 from .library import doctor_library, initialize_library, load_json_object
 from .paths import require_safe_id
+from .platform_support import is_link
 from .production_mount import validate_production_mount
 from .publishing import validate_production_version
 from .schema_catalog import TARGET_CLIS
@@ -139,7 +140,7 @@ def _automatic_library_id(library_path: Path) -> str:
     """Return an existing identity or derive a stable machine-only ID."""
 
     manifest_path = library_path / "library.json"
-    if manifest_path.is_file() and not manifest_path.is_symlink():
+    if manifest_path.is_file() and not is_link(manifest_path):
         try:
             return require_safe_id(
                 load_json_object(manifest_path).get("library_id"),
@@ -245,7 +246,7 @@ def run_quickstart(
         completed.append(stage)
 
         stage = "p0"
-        library_exists = answers.library_path.exists() or answers.library_path.is_symlink()
+        library_exists = answers.library_path.exists() or is_link(answers.library_path)
         empty_directory = (
             library_exists
             and answers.library_path.is_dir()

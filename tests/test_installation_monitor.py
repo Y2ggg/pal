@@ -69,7 +69,7 @@ def test_creation_reads_real_version_enabled_and_full_inventory(creation_install
     (cache / "unexpected.md").write_text("drift")
     assert check()["state"] == "drift"
     assert monitor._creation_status(cli, config, [], [market])["state"] == "missing"
-    market["root" if cli == "codex" else "path"] = "/tmp/foreign"
+    market["root" if cli == "codex" else "path"] = str(cache.parent / "foreign")
     assert check()["state"] == "conflict"
 
 
@@ -158,7 +158,7 @@ def test_mount_missing_disabled_drift_and_foreign_source(mounted, cli):
     skill = next(cache.rglob("SKILL.md"))
     skill.write_text("changed")
     assert check()["state"] == "drift"
-    market["root" if cli == "codex" else "path"] = "/tmp/foreign"
+    market["root" if cli == "codex" else "path"] = str(cache.parent / "foreign")
     assert check()["state"] == "conflict"
 
 
@@ -255,9 +255,11 @@ def test_pal_package_upgrade_recognizes_its_own_previous_marketplace(
 ):
     _, config, installations = creation_installations
     entry, market, _ = installations[cli]
-    monkeypatch.setattr(adapters, "__version__", "0.3.0")
-    monkeypatch.setattr(monitor, "__version__", "0.3.0")
+    major, minor, _ = adapters.__version__.split(".")
+    future = f"{major}.{int(minor) + 1}.0"
+    monkeypatch.setattr(adapters, "__version__", future)
+    monkeypatch.setattr(monitor, "__version__", future)
     state = monitor._creation_status(cli, config, [entry], [market])
     assert state["state"] == "outdated"
-    assert state["expected_version"] == "0.3.0+native.7"
+    assert state["expected_version"] == f"{future}+{adapters.CREATION_ADAPTER_SUFFIX}"
     assert state["installed_marketplace"] == market["name"]

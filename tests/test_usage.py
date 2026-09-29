@@ -6,7 +6,6 @@ ACC-009, ACC-010, ACC-011, ACC-012.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import shlex
@@ -18,8 +17,9 @@ import pytest
 import pal.cli as cli_module
 import pal.production_mount as production_mount_module
 import pal.usage as usage_module
+from pal import locking as fcntl
 from pal.compatibility import CliCompatibility
-from pal.errors import PALError, UsageError
+from pal.errors import PALError, PathSafetyError, UsageError
 from pal.io import sha256_file
 from pal.production_mount import activate_production
 from pal.usage import (
@@ -587,14 +587,19 @@ def test_usage_record_is_append_only_and_rejects_p3_fields(
     alias_parent.symlink_to(tmp_path, target_is_directory=True)
     alias_library = alias_parent / "library"
     alias_record = alias_library / record_path.relative_to(history["library"])
-    assert (
-        validate_usage_record(
-            alias_library,
-            alias_record,
-            config_root=history["config"],
-        )["usage_id"]
-        == result["usage_id"]
-    )
+    if os.name == "nt":
+        # Native Windows rejects all reparse-point ancestors at the library boundary.
+        with pytest.raises(PathSafetyError, match="reparse"):
+            validate_usage_record(alias_library, alias_record, config_root=history["config"])
+    else:
+        assert (
+            validate_usage_record(
+                alias_library,
+                alias_record,
+                config_root=history["config"],
+            )["usage_id"]
+            == result["usage_id"]
+        )
 
     parent = record_path.parent
     orphan = parent / ".orphan.json.injected.tmp"

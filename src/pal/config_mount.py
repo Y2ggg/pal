@@ -27,6 +27,7 @@ from .library import (
     utc_now,
 )
 from .paths import canonical_existing_root, require_inside, require_safe_id
+from .platform_support import is_link, validate_windows_path
 from .schema_catalog import TARGET_CLIS, validate_config_instance, validate_instance
 
 CONFIG_MOUNT_SCHEMA = "config-mount.schema.json"
@@ -37,15 +38,13 @@ SUPPORTED_ADAPTER_VERSIONS = {"0.1.0", "0.2.0"}
 
 
 def default_config_root() -> Path:
-    """Return the platform-specific PAL user configuration root.
+    """Return the platform-specific PAL user configuration root."""
 
-    Windows is intentionally not claimed as a supported implementation
-    platform yet.  The explicit ``--config-root`` option remains useful on
-    POSIX for isolated tests and automation.
-    """
-
-    if sys.platform.startswith("win") or os.name != "posix":
-        raise PathSafetyError("PAL v0.1 supports configuration mounts only on macOS/POSIX")
+    if sys.platform.startswith("win"):
+        configured = os.environ.get("LOCALAPPDATA")
+        return (Path(configured) if configured else Path.home() / "AppData" / "Local") / "pal"
+    if sys.platform not in {"darwin", "linux"}:
+        raise PathSafetyError("PAL requires macOS, Linux or Windows")
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "pal"
     configured = os.environ.get("XDG_CONFIG_HOME")
@@ -68,11 +67,13 @@ def resolve_config_root(
 def _absolute_no_symlink_root(path: Path, *, create: bool) -> Path:
     """Canonicalize a config root while rejecting symlinks at every level."""
 
+    validate_windows_path(path)
     lexical = Path(os.path.abspath(path))
+    validate_windows_path(lexical)
     # macOS exposes common temporary/user locations (notably ``/tmp`` and
     # ``/var``) as system symlinks.  Canonicalize those stable prefixes first;
     # the requested leaf itself is still rejected when it is a symlink.
-    if lexical.exists() and lexical.is_symlink():
+    if lexical.exists() and is_link(lexical):
         raise PathSafetyError(f"PAL config root cannot be a symbolic link: {lexical}")
     # macOS's standard aliases are safe because they resolve to the same
     # system-owned tree; any user-created link below those aliases remains
@@ -85,7 +86,7 @@ def _absolute_no_symlink_root(path: Path, *, create: bool) -> Path:
     cursor = Path(lexical.anchor)
     for part in lexical.parts[1:]:
         cursor /= part
-        if cursor.is_symlink() and cursor not in allowed_system_aliases:
+        if is_link(cursor) and cursor not in allowed_system_aliases:
             raise PathSafetyError(f"PAL config root contains a symbolic link: {cursor}")
     absolute = Path(os.path.realpath(lexical))
     if absolute == Path(absolute.anchor) or not absolute.name:
@@ -98,8 +99,8 @@ def _absolute_no_symlink_root(path: Path, *, create: bool) -> Path:
     missing: list[Path] = []
     for part in absolute.parts[1:]:
         cursor /= part
-        if cursor.exists() or cursor.is_symlink():
-            if cursor.is_symlink():
+        if cursor.exists() or is_link(cursor):
+            if is_link(cursor):
                 raise PathSafetyError(f"PAL config root contains a symbolic link: {cursor}")
             if not cursor.is_dir():
                 raise PathSafetyError(f"PAL config root component is not a directory: {cursor}")
@@ -112,7 +113,7 @@ def _absolute_no_symlink_root(path: Path, *, create: bool) -> Path:
         try:
             directory.mkdir()
         except FileExistsError:
-            if directory.is_symlink() or not directory.is_dir():
+            if is_link(directory) or not directory.is_dir():
                 raise PathSafetyError(
                     f"PAL config root component is not a real directory: {directory}"
                 ) from None
@@ -129,8 +130,8 @@ def _mkdir_no_symlink(path: Path, root: Path) -> None:
     cursor = root
     for part in relative.parts:
         cursor /= part
-        if cursor.exists() or cursor.is_symlink():
-            if cursor.is_symlink():
+        if cursor.exists() or is_link(cursor):
+            if is_link(cursor):
                 raise PathSafetyError(f"configuration path contains a symbolic link: {cursor}")
             if not cursor.is_dir():
                 raise PathSafetyError(f"configuration path is not a directory: {cursor}")
@@ -307,7 +308,7 @@ def validate_config_mount(
     doctor_development_context(root, require_writable_development=require_writable_development)
     manifest = load_json_object(require_inside(root, "library.json", "library manifest"))
     record_path = Path(os.path.abspath(record_path))
-    if record_path.is_symlink() or not record_path.is_file():
+    if is_link(record_path) or not record_path.is_file():
         raise PathSafetyError(f"configuration mount record is unavailable: {record_path}")
     record = load_json_object(record_path)
     validate_instance(CONFIG_MOUNT_SCHEMA, record)
@@ -365,8 +366,8 @@ def mount_config(
     destination = _config_mount_path(destination_root, manifest["library_id"], cli_id)
     record = _build_mount_record(root, manifest, cli_id)
 
-    if destination.exists() or destination.is_symlink():
-        if destination.is_symlink() or not destination.is_file():
+    if destination.exists() or is_link(destination):
+        if is_link(destination) or not destination.is_file():
             raise PathSafetyError(
                 f"configuration mount destination is not a regular file: {destination}"
             )
@@ -455,7 +456,7 @@ def _creation_library_binding_path(config_root: Path, *, create: bool) -> Path:
     directory = config_root / "defaults"
     if create:
         _mkdir_no_symlink(directory, config_root)
-    elif directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+    elif is_link(directory) or (directory.exists() and not directory.is_dir()):
         raise PathSafetyError(f"default binding path is not a real directory: {directory}")
     return directory / "creation-library.json"
 
@@ -493,8 +494,8 @@ def bind_default_creation_library(
     }
     validate_config_instance(CREATION_LIBRARY_BINDING_SCHEMA, record)
 
-    if destination.exists() or destination.is_symlink():
-        if destination.is_symlink() or not destination.is_file():
+    if destination.exists() or is_link(destination):
+        if is_link(destination) or not destination.is_file():
             raise PathSafetyError(f"default creation binding is not a regular file: {destination}")
         existing = load_json_object(destination)
         validate_config_instance(CREATION_LIBRARY_BINDING_SCHEMA, existing)
@@ -525,13 +526,13 @@ def resolve_default_creation_library(
     controlled = os.environ.get("PAL_CONFIG_ROOT") if config_root is None else None
     selected = config_root or (Path(controlled) if controlled else default_config_root())
     lexical = Path(os.path.abspath(selected))
-    if not lexical.exists() and not lexical.is_symlink():
+    if not lexical.exists() and not is_link(lexical):
         return None
     destination_root = resolve_config_root(config_root, create=False)
     binding_path = _creation_library_binding_path(destination_root, create=False)
-    if not binding_path.exists() and not binding_path.is_symlink():
+    if not binding_path.exists() and not is_link(binding_path):
         return None
-    if binding_path.is_symlink() or not binding_path.is_file():
+    if is_link(binding_path) or not binding_path.is_file():
         raise PathSafetyError(f"default creation binding is not a regular file: {binding_path}")
     record = load_json_object(binding_path)
     validate_config_instance(CREATION_LIBRARY_BINDING_SCHEMA, record)

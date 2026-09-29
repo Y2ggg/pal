@@ -30,13 +30,31 @@ BLOCKED_SUBCOMMANDS = (
 
 def _executable_name(command: Any) -> str:
     if isinstance(command, str):
-        return command.rsplit("/", 1)[-1]
+        return (
+            command.replace("\\", "/")
+            .rsplit("/", 1)[-1]
+            .lower()
+            .removesuffix(".exe")
+            .removesuffix(".cmd")
+        )
     if isinstance(command, Sequence) and command:
         return _executable_name(command[0])
     return ""
 
 
 def _is_blocked(command: Any) -> tuple[str, ...] | None:
+    # Native Windows npm wrappers are launched via node without cmd.exe.
+    if (
+        isinstance(command, Sequence)
+        and not isinstance(command, str)
+        and len(command) > 1
+        and _executable_name(command) == "node"
+    ):
+        entry = str(command[1]).replace("\\", "/")
+        if "/node_modules/@openai/codex/" in entry:
+            command = ["codex", *command[2:]]
+        elif "/node_modules/@anthropic-ai/claude-code/" in entry:
+            command = ["claude", *command[2:]]
     if _executable_name(command) not in BLOCKED_TARGETS:
         return None
     if not isinstance(command, Sequence) or isinstance(command, str):

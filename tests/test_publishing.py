@@ -277,7 +277,7 @@ def test_acc_012_compose_failure_cleans_staging_and_never_changes_active(
     def fail_rename(_source: Path, _target: Path) -> None:
         raise OSError("injected production commit failure")
 
-    monkeypatch.setattr(publishing_module.os, "rename", fail_rename)
+    monkeypatch.setattr(publishing_module, "move_path", fail_rename)
     with pytest.raises(OSError, match="injected production commit failure"):
         compose_production(library_root, [released["release_id"]])
 

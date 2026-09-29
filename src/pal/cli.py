@@ -397,6 +397,9 @@ def _read_task(path: str) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     arguments = _parser().parse_args(argv)
     try:
         if arguments.command == "quickstart":

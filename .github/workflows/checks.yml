@@ -3,20 +3,37 @@ name: 检查
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 验证范围（仅打包变更可复用相同源码的全量结果）
+        type: choice
+        default: all
+        options: [all, test, bundle]
+
+env:
+  PYTHONUTF8: "1"
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'bundle'
+    name: ${{ matrix.os }} / Python ${{ matrix.python }} / ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-22.04]
         python: ['3.11', '3.14']
+        shard: [all]
+        include:
+          - {os: windows-latest, python: '3.11', shard: '0'}
+          - {os: windows-latest, python: '3.11', shard: '1'}
+          - {os: windows-latest, python: '3.14', shard: '0'}
+          - {os: windows-latest, python: '3.14', shard: '1'}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
@@ -26,5 +43,45 @@ jobs:
       - run: uv sync --locked --extra test
       - run: uv run ruff format --check src tests
       - run: uv run ruff check src tests
-      - run: uv run pytest
+      - name: Run complete test selection
+        shell: python
+        env:
+          PAL_TEST_SHARD: ${{ matrix.shard }}
+        run: |
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          files = sorted(str(path) for path in Path('tests').glob('test_*.py'))
+          shard = os.environ['PAL_TEST_SHARD']
+          selected = files if shard == 'all' else files[int(shard)::2]
+          assert selected
+          print('Test files:', selected, flush=True)
+          sys.exit(subprocess.run(['uv', 'run', 'pytest', '-n', '4', '-v', '--maxfail=1', '--durations=15', *selected]).returncode)
       - run: uv build
+
+  bundle:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'test'
+    name: 安装包 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: '3.11.15'
+          version: '0.11.9'
+      - run: uv sync --locked --extra test --extra bundle
+      - run: uv run python packaging/build.py
+      - run: uv run python packaging/smoke.py
+      - run: npm install -g @openai/codex@0.158.0 @anthropic-ai/claude-code@2.1.234
+      - run: uv run python packaging/smoke.py --native-clis
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pal-${{ matrix.os }}
+          path: dist/bundles/*
+          if-no-files-found: error

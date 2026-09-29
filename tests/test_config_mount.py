@@ -56,13 +56,13 @@ def test_prd_tech_001_default_config_root_uses_linux_xdg(
     assert config_mount_module.default_config_root() == tmp_path / "xdg/pal"
 
 
-def test_prd_tech_001_default_config_root_rejects_windows(
+def test_prd_tech_001_default_config_root_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(config_mount_module.sys, "platform", "win32")
 
-    with pytest.raises(PALError, match="macOS/POSIX"):
-        config_mount_module.default_config_root()
+    monkeypatch.setenv("LOCALAPPDATA", str(Path.home() / "Local"))
+    assert config_mount_module.default_config_root() == Path.home() / "Local" / "pal"
 
 
 def test_e2e_config_mount_01_acc_002_both_clis_resolve_one_development_context(

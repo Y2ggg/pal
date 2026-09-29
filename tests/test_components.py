@@ -92,7 +92,7 @@ def test_skill_driver_preserves_v1_candidate_and_payload_contract(tmp_path: Path
     assert plan["payload_root"] == f"generated/{artifact_id}/payload"
     assert plan["skill_path"] == (f"generated/{artifact_id}/payload/skills/{unit_id}/SKILL.md")
     assert driver.candidate_paths(plan) == (plan["skill_path"],)
-    assert driver.candidate_tree_roots(plan) == (str(Path(plan["skill_path"]).parent),)
+    assert driver.candidate_tree_roots(plan) == (Path(plan["skill_path"]).parent.as_posix(),)
     assert driver.public_candidate_paths(tmp_path, plan) == {
         "skill_path": str(tmp_path / plan["skill_path"]),
         "skill_root": str((tmp_path / plan["skill_path"]).parent),

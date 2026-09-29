@@ -57,7 +57,7 @@ def test_acc_003_004_both_adapter_shells_share_one_canonical_creation_skill(
 
     claude = prepare_creation_adapter(library_root, "claude-code", config_root=config_root)
     codex = prepare_creation_adapter(library_root, "codex", config_root=config_root)
-    assert "/targets/creation/" in claude["plugin_root"]
+    assert "/targets/creation/" in Path(claude["plugin_root"]).as_posix()
     assert claude["minimum_cli_version"] == "2.1.205"
     assert codex["minimum_cli_version"] == "0.147.0"
     claude_skill = Path(claude["plugin_root"]) / "skills/pal-create-skill/SKILL.md"
@@ -130,7 +130,7 @@ def test_multifile_adapter_uses_new_projection_without_rewriting_old_bytes(
     old_digest = tree_digest(old_root)
     current = prepare_creation_adapter(library, cli_id, config_root=config)
     assert current["plugin_root"] != legacy["plugin_root"]
-    assert "/native-v7/" in current["plugin_root"]
+    assert "native-v8" in Path(current["plugin_root"]).parts
     assert tree_digest(old_root) == old_digest
     assert adapters_module._managed_creation_marketplace(Path(legacy["marketplace_root"]), cli_id)
 
@@ -143,7 +143,7 @@ def test_creation_adapter_requires_exact_update_target_and_change_request(
     text = (Path(adapter["plugin_root"]) / "skills/pal-create-skill/SKILL.md").read_text(
         encoding="utf-8"
     )
-    assert adapters_module.CREATION_LAYOUT_VERSION == "native-v7"
+    assert adapters_module.CREATION_LAYOUT_VERSION == "native-v8"
     assert (
         f"{adapters_module.__version__}+{adapters_module.CREATION_ADAPTER_SUFFIX}"
         in json.loads(
@@ -261,7 +261,7 @@ def test_cli_compatibility_gate_accepts_verified_and_probed_newer_versions(
         }
         return SimpleNamespace(returncode=0, stdout=outputs[tuple(suffix)], stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", supported_codex)
+    monkeypatch.setattr(subprocess, "run", supported_codex)
     assert require_supported_cli_version("codex") == "codex"
     assert require_compatible_cli("codex").classification == "verified-version"
 
@@ -283,14 +283,14 @@ def test_cli_compatibility_gate_accepts_verified_and_probed_newer_versions(
             output = "--strict --scope\n"
         return SimpleNamespace(returncode=0, stdout=output, stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", newer_claude)
+    monkeypatch.setattr(subprocess, "run", newer_claude)
     assert require_supported_cli_version("claude-code") == "claude"
     assert require_compatible_cli("claude-code").classification == "probe-compatible-version"
 
     def below_minimum(arguments: list[str], **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(returncode=0, stdout="2.1.204 (Claude Code)\n", stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", below_minimum)
+    monkeypatch.setattr(subprocess, "run", below_minimum)
     with pytest.raises(PALError, match=r"minimum 2\.1\.205, got 2\.1\.204"):
         require_supported_cli_version("claude-code")
 
@@ -313,7 +313,7 @@ def test_cli_compatibility_probe_and_blacklist_fail_closed(
         output = "2.1.237 (Claude Code)\n" if arguments[1:] == ["--version"] else "--plugin-dir\n"
         return SimpleNamespace(returncode=0, stdout=output, stderr="")
 
-    monkeypatch.setattr(adapters_module.subprocess, "run", missing_surface)
+    monkeypatch.setattr(subprocess, "run", missing_surface)
     with pytest.raises(PALError, match="compatibility probe cli-help is missing"):
         require_compatible_cli("claude-code")
 

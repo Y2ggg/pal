@@ -3,7 +3,7 @@
 产品名称为 PAL · 个人能力库（Personal Ability Library）；命令、包名、插件调用名和配置路径
 统一使用 PAL 标识。控制台已采用完整 pal 字标和明暗主题标识。
 
-适用版本：0.2.4；日期：2026-09-28。首次设置见[快速开始](QUICKSTART.md)，
+适用版本：0.3.0；日期：2026-09-29。首次设置见[快速开始](QUICKSTART.md)，
 版本变化见[更新记录](../CHANGELOG.md)，数据和访问边界见[安全说明](../SECURITY.md)。
 
 ## 一套库、三个阶段
@@ -27,14 +27,41 @@ PAL 配置目录保存默认库、挂载、安装与恢复状态。
 
 ## 安装与首次设置
 
-macOS 已做双端实机验证；其他 POSIX 系统待完整验收，当前不支持 Windows。需要 Python 3.11+、
-uv、Claude Code 和 Codex。
-两端 CLI 必须已完成认证。PAL 会检查版本门槛、官方插件命令与必要行为，不以版本号推断兼容。
-当前双端验收环境是 Claude Code 2.1.234 / Codex 0.156.1。安装时从下载的源码根目录执行，
-或将下方 `.` 替换为发行 wheel 路径。命令不可见时用 `uv tool update-shell` 更新终端 PATH。
+PAL 0.3.0 支持 macOS、Linux 与原生 Windows；不依赖 WSL。
+运行包自带 Python 及运行依赖，不包含或自动认证 Claude Code/Codex。两端 CLI 必须自行安装，
+实际模型任务需要认证或 provider 配置。PAL 会检查版本、官方插件命令和行为。
+
+| 运行包 | 目标环境 | 验证边界 |
+|---|---|---|
+| Windows x64 | 原生 PowerShell，推荐 Windows 11 | Windows runner 的自动化/安装验证，不等于模型任务验收 |
+| macOS arm64 / x86_64 | Apple Silicon / Intel 分别下载 | 两种架构原生构建；历史模型验收在 Apple Silicon |
+| Linux x64 | glibc 2.35+（例如 Ubuntu 22.04+） | Linux runner 的自动化/安装验证，不包含 musl/Alpine |
+
+macOS 运行包在 macOS 15 验证，尚未验证更早版本；BUILD.json 记录实际构建环境，
+不表示所有更早版本都能运行。Windows ARM64、Linux ARM64 没有本次原生运行包。Skill 自带脚本和外部工具
+仍可能有自己的平台要求，PAL 不会自动转换它们。
+
+从 [Releases](https://github.com/Y2ggg/pal/releases) 下载并核对 SHA256SUMS：
+macOS/Linux 用 `shasum -a 256 文件名` 或 `sha256sum 文件名`；Windows 用 `Get-FileHash 文件名 -Algorithm SHA256`。
+解压后按包内 INSTALL.md 操作：macOS/Linux 运行 `sh install.sh`；Windows 在 PowerShell 运行
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`。
+这只对该次脚本使用执行策略参数，不更改全局策略。运行包未进行 Apple 公证或 Windows Authenticode 签名。
+
+| 系统 | 默认程序位置 | 命令路径 |
+|---|---|---|
+| macOS / Linux | `~/.local/share/pal-program` | `~/.local/bin/pal`，需要加入 PATH |
+| Windows | `%LOCALAPPDATA%\Programs\PAL` | `runtime\pal.exe` 所在目录加入当前用户 PATH，新开终端生效 |
+
+通过 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`（POSIX），或安装脚本的 `-InstallDir`（Windows）可调整程序位置。
+卸载使用**安装目录内**的 `uninstall.sh` / `uninstall.ps1`；库、配置及 CLI 插件保留。
+升级须沿用原安装目录和命令目录：POSIX 继续传入原 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`，Windows
+继续使用原 `-InstallDir`。需要迁移位置时，先从原安装目录卸载，再按新位置安装。
+先用对应配置和端口停止所有 PAL Web 服务。不要混用 uv 和运行包覆盖同一命令；切换前先用原工具卸载程序。
+
+源码/wheel 方式需要 Python 3.11+、uv。在源码根目录运行 `uv tool install .`，或将 `.` 替换为
+发行 wheel 的路径。此方式找不到命令时运行 `uv tool update-shell` 并新开终端。两种安装完成后均运行：
 
 ```sh
-uv tool install .
 pal quickstart
 ```
 
@@ -49,9 +76,11 @@ Quickstart 只询问外挂库保存路径并确认，准备库、两端配置挂
 设置在中途失败时可能已建库或安装部分入口；失败信息列出已完成步骤和下一步指引。
 修复原因后用相同库与配置路径重试，不能把失败理解为所有已完成步骤均被撤销。
 
-外挂库与 PAL 配置目录需使用长期稳定、彼此不重叠的路径。默认 macOS 配置目录为
-`~/Library/Application Support/pal`。不支持直接移动已配置库，也不要使用自建
-符号链接代替库或配置目录。多库操作应在维护命令中明确 `--library` 和 `--config-root`。
+外挂库与 PAL 配置目录需使用长期稳定、彼此不重叠的路径。默认配置目录：macOS 为
+`~/Library/Application Support/pal`，Linux 为 `$XDG_CONFIG_HOME/pal`（未设置时 `~/.config/pal`），
+Windows 为 `%LOCALAPPDATA%\pal`。Windows 仅支持本地磁盘路径，不支持 UNC、设备路径、
+目录联接和其他重解析点；文件名不能包含设备保留名、ADS、结尾点/空格。不支持直接移动已配置库，也不要使用自建
+符号链接代替库或配置目录。库与配置不支持跨系统直接搬迁。多库操作应在维护命令中明确 `--library` 和 `--config-root`。
 支持省略库参数的命令会先检查环境变量及当前目录所属库，再使用默认库；并非总选 Quickstart
 最近配置的库。自定义配置目录的后续用法和选择顺序见[维护说明](MAINTENANCE.md)。
 
@@ -163,6 +192,8 @@ Skill 卡片名称和“查看详情”打开完整概览/文件页；有未发�
 
 若 Web 正在运行，先在另一终端执行 `pal web stop`；自定义端口/配置时带上对应参数。没有
 运行则跳过停止步骤。然后从新版源码根目录执行，或将 `.` 换成本地新版 wheel：
+
+运行包用户改为重新运行新版安装脚本，并沿用上文所述的原安装目录和命令目录；迁移位置先卸载原安装。
 
 ```sh
 uv tool install --force --reinstall .

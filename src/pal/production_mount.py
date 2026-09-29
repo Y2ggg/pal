@@ -18,7 +18,6 @@ import re
 import secrets
 import shutil
 import socket
-import subprocess
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -26,12 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - guarded by the P0 platform gate
-    fcntl = None
-
 from . import __version__
+from . import locking as fcntl
 from .adapters import require_compatible_cli
 from .compatibility import CliCompatibility
 from .components import SKILL_COMPONENT_TYPE_ID, component_type_driver
@@ -57,6 +52,7 @@ from .paths import (
     require_safe_id,
     validate_regular_tree,
 )
+from .platform_support import call_external, command_for_platform, is_link, move_path, run_external
 from .publishing import validate_production_version
 from .schema_catalog import TARGET_CLIS, validate_instance
 from .targets import target_driver
@@ -107,8 +103,8 @@ def _mkdir_descendant(path: Path, root: Path) -> None:
     cursor = root
     for part in relative.parts:
         cursor /= part
-        if cursor.exists() or cursor.is_symlink():
-            if cursor.is_symlink() or not cursor.is_dir():
+        if cursor.exists() or is_link(cursor):
+            if is_link(cursor) or not cursor.is_dir():
                 raise PathSafetyError(
                     f"production configuration path is not a real directory: {cursor}"
                 )
@@ -121,7 +117,7 @@ def _safe_remove_staging(path: Path, parent: Path, prefix: str) -> None:
         path.relative_to(parent)
     except ValueError as exc:  # pragma: no cover - defensive invariant
         raise PathSafetyError(f"refusing to clean production staging path: {path}") from exc
-    if path.is_symlink() or not path.name.startswith(prefix):
+    if is_link(path) or not path.name.startswith(prefix):
         raise PathSafetyError(f"refusing to clean unexpected production staging path: {path}")
     shutil.rmtree(path)
 
@@ -135,7 +131,7 @@ def _files_digest(files: Mapping[str, bytes]) -> str:
 
 
 def _verify_files(root: Path, expected: Mapping[str, bytes], label: str) -> None:
-    if root.is_symlink() or not root.is_dir():
+    if is_link(root) or not root.is_dir():
         raise IntegrityError(f"{label} is not a real directory: {root}")
     validate_regular_tree(root)
     actual = {path.relative_to(root).as_posix(): path for path in root.rglob("*") if path.is_file()}
@@ -184,7 +180,7 @@ def _materialize_files(
     Returns ``True`` when a pre-existing object was reused.
     """
 
-    if target.exists() or target.is_symlink():
+    if target.exists() or is_link(target):
         _verify_files(target, expected, label)
         return True
     temporary = Path(tempfile.mkdtemp(dir=parent, prefix=prefix, suffix=".tmp"))
@@ -195,7 +191,7 @@ def _materialize_files(
             write_new_bytes(temporary / relative, material)
         _verify_files(temporary, expected, label)
         fsync_tree(temporary)
-        os.rename(temporary, target)
+        move_path(temporary, target)
         fsync_directory(parent)
         committed = True
     finally:
@@ -450,13 +446,13 @@ def _mount_metadata(
     fallback_timestamp: str,
     detected_versions: Mapping[str, str],
 ) -> tuple[str, dict[str, str], str]:
-    if not (mount_root.exists() or mount_root.is_symlink()):
+    if not (mount_root.exists() or is_link(mount_root)):
         if set(detected_versions) != set(TARGET_CLIS):
             raise ProductionError(
                 "new production mount requires compatibility evidence for all targets"
             )
         return fallback_timestamp, dict(detected_versions), __version__
-    if mount_root.is_symlink() or not mount_root.is_dir():
+    if is_link(mount_root) or not mount_root.is_dir():
         raise IntegrityError(f"production mount root is invalid: {mount_root}")
     bundle_path = mount_root / "bundle.json"
     bundle = load_json_object(bundle_path)
@@ -506,7 +502,7 @@ def _build_target_plan(
         _mkdir_descendant(projection_parent, config_root)
         _mkdir_descendant(mount_parent, config_root)
     elif any(
-        parent.is_symlink() or not parent.is_dir() for parent in (projection_parent, mount_parent)
+        is_link(parent) or not parent.is_dir() for parent in (projection_parent, mount_parent)
     ):
         raise IntegrityError("production mount layout is incomplete")
     projection_root = projection_parent / version_id
@@ -643,17 +639,20 @@ def _marketplace_root(plan: TargetPlan) -> Path:
 
 
 def _run_claude_validation(plan: TargetPlan) -> None:
-    process = subprocess.run(
-        [
-            plan.executables["claude-code"],
-            "plugin",
-            "validate",
-            "--strict",
-            str(_plugin_root(plan, "claude-code")),
-        ],
+    process = run_external(
+        command_for_platform(
+            [
+                plan.executables["claude-code"],
+                "plugin",
+                "validate",
+                "--strict",
+                str(_plugin_root(plan, "claude-code")),
+            ]
+        ),
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if process.returncode != 0:
         detail = process.stderr.strip() or process.stdout.strip()
@@ -661,7 +660,13 @@ def _run_claude_validation(plan: TargetPlan) -> None:
 
 
 def _run_json(arguments: list[str], label: str) -> dict[str, Any]:
-    process = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    process = run_external(
+        arguments,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if process.returncode != 0:
         detail = process.stderr.strip() or process.stdout.strip()
         raise ProductionError(f"{label} failed: {detail}")
@@ -677,7 +682,13 @@ def _run_json(arguments: list[str], label: str) -> dict[str, Any]:
 def _run_text(arguments: list[str], label: str) -> None:
     """Run one target mutation that reports success through its exit code only."""
 
-    process = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    process = run_external(
+        arguments,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if process.returncode != 0:
         detail = process.stderr.strip() or process.stdout.strip() or f"exit {process.returncode}"
         raise ProductionError(f"{label} failed: {detail}")
@@ -686,7 +697,13 @@ def _run_text(arguments: list[str], label: str) -> None:
 def _run_json_array(arguments: list[str], label: str) -> list[dict[str, Any]]:
     """Read one Claude ``--json`` listing, whose envelope is a bare array."""
 
-    process = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    process = run_external(
+        arguments,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if process.returncode != 0:
         detail = process.stderr.strip() or process.stdout.strip()
         raise ProductionError(f"{label} failed: {detail}")
@@ -1113,7 +1130,7 @@ def validate_production_mount(
     mount_root = (
         pal_config_root / "mounts" / "production" / context["library_id"] / "versions" / version_id
     )
-    if mount_root.is_symlink() or not mount_root.is_dir():
+    if is_link(mount_root) or not mount_root.is_dir():
         raise IntegrityError(f"production mount does not exist: {mount_root}")
     bundle = load_json_object(mount_root / "bundle.json")
     validate_instance(MOUNT_SCHEMA, bundle)
@@ -1169,11 +1186,11 @@ def _validate_stable_active(
 @contextmanager
 def _activation_lock(config_root: Path, library_id: str) -> Iterator[None]:
     if fcntl is None:  # pragma: no cover - doctor already rejects this platform
-        raise ProductionError("production activation requires the POSIX lock backend")
+        raise ProductionError("production activation requires a supported file lock backend")
     lock_root = config_root / "locks"
     _mkdir_descendant(lock_root, config_root)
     lock_path = lock_root / f"{library_id}.activation.lock"
-    if lock_path.is_symlink():
+    if is_link(lock_path):
         raise PathSafetyError(f"production activation lock cannot be a symlink: {lock_path}")
     descriptor = os.open(
         lock_path,
@@ -1285,7 +1302,7 @@ def _advance_transition(
 
 
 def _delete_transition(path: Path) -> None:
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise PathSafetyError(f"production transition is not a regular file: {path}")
     path.unlink()
     fsync_directory(path.parent)
@@ -1421,7 +1438,7 @@ def _perform_activation_locked(
         compatibilities=compatibilities,
     )
     transition_path = _transition_path(config_root, library_id)
-    if not replace_transition and (transition_path.exists() or transition_path.is_symlink()):
+    if not replace_transition and (transition_path.exists() or is_link(transition_path)):
         raise ProductionError(f"production transition already exists: {transition_path}")
     transition = _new_transition(
         library_id=library_id,
@@ -1442,7 +1459,7 @@ def _perform_activation_locked(
 
 
 def _load_transition(path: Path, library_id: str) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise PathSafetyError(f"production transition is not a regular file: {path}")
     transition = load_json_object(path)
     validate_instance(TRANSITION_SCHEMA, transition)
@@ -1468,7 +1485,7 @@ def _verify_plan_objects(plan: TargetPlan, label: str, *, optional: bool) -> Non
         (plan.projection_root, plan.projection_files, "projection"),
         (plan.mount_root, plan.mount_files, "mount"),
     ):
-        exists = root.exists() or root.is_symlink()
+        exists = root.exists() or is_link(root)
         if not exists and optional:
             continue
         if not exists:
@@ -1618,7 +1635,7 @@ def _recover_locked(
     library_id: str,
 ) -> dict[str, Any]:
     path = _transition_path(config_root, library_id)
-    if not (path.exists() or path.is_symlink()):
+    if not (path.exists() or is_link(path)):
         compatibilities = _detect_target_compatibilities()
         executables = {
             cli_id: compatibility.executable for cli_id, compatibility in compatibilities.items()
@@ -1714,7 +1731,7 @@ def _activate_or_recover(
             raise ProductionError("生产内容仅存于旧证据归档或已缺失；请先正常发布，再同步到 CLI")
         validate_production_version(root, version_id)
         path = _transition_path(pal_config_root, library_id)
-        if path.exists() or path.is_symlink():
+        if path.exists() or is_link(path):
             _recover_locked(root, pal_config_root, library_id)
         doctor_library(root)
         try:
@@ -1730,7 +1747,7 @@ def _activate_or_recover(
             raise
         except (ProductionError, OSError) as exc:
             transition = _transition_path(pal_config_root, library_id)
-            if transition.exists() or transition.is_symlink():
+            if transition.exists() or is_link(transition):
                 _recover_locked(root, pal_config_root, library_id)
                 raise ProductionError(
                     f"production activation failed and was recovered: {exc}"
@@ -1849,7 +1866,7 @@ def active_runtime_context(
     with _activation_lock(pal_config_root, context["library_id"]):
         require_no_cleanup(root)
         transition = pal_config_root / f"transitions/production/{context['library_id']}.json"
-        if transition.exists() or transition.is_symlink():
+        if transition.exists() or is_link(transition):
             raise ProductionError(
                 f"cannot start a production run during a transition: {transition}"
             )
@@ -1923,7 +1940,7 @@ def launch_production_entry(
         # Both targets now resolve the active production plugin from their own
         # persistent installation, so no session-scoped injection is needed.
         command = [runtime["executable"], *cli_arguments]
-        return subprocess.call(command, env=environment)
+        return call_external(command, env=environment)
 
 
 __all__ = [

@@ -6,9 +6,9 @@ ACC-008, ACC-011, ACC-012.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import shutil
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ import pytest
 
 import pal.cli as cli_module
 import pal.production_mount as production_mount_module
+from pal import locking as fcntl
 from pal.adapters import launch_creation_entry
 from pal.compatibility import CliCompatibility
 from pal.errors import CreationError, PALError, ProductionError
@@ -871,7 +872,7 @@ def test_launch_production_entry_starts_a_validated_interactive_session(
         return 17
 
     monkeypatch.setattr(production_mount_module, "active_runtime_context", runtime_context)
-    monkeypatch.setattr(production_mount_module.subprocess, "call", launch)
+    monkeypatch.setattr(subprocess, "call", launch)
 
     assert (
         launch_production_entry(

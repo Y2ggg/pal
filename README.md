@@ -13,7 +13,7 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 在本地 Web 控制台查看内容、发布、挂载和维护。开发中的修改与正在使用的内容相互独立，
 什么时候发布、什么时候交给 CLI 使用，由你决定。
 
-当前候选版本 **0.2.4**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
+当前版本 **0.3.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
 配置路径使用 PAL 专属目录。
 
 ## 可以做什么
@@ -29,21 +29,24 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 
 ## 开始使用
 
-需要 Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及已完成登录
-或模型配置的 Claude Code 和 Codex。**macOS 已做双端实机验证**；其他 POSIX 系统尚待完整
-验收，Windows 暂不支持。CLI 兼容范围见[快速开始](docs/QUICKSTART.md)。
+先安装并配置 Claude Code 与 Codex。PAL 提供自带 Python 的运行包：从
+[GitHub Releases](https://github.com/Y2ggg/pal/releases) 下载匹配系统和 CPU 的文件，解压后安装：
 
-下载源码并进入包含 `pyproject.toml` 的项目根目录：
+| 系统 | 文件 | 安装命令（在解压目录执行） |
+|---|---|---|
+| Windows x64 | `pal-0.3.0-windows-x86_64.zip` | `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
+| macOS Apple Silicon / Intel | `pal-0.3.0-macos-arm64.tar.gz` / `pal-0.3.0-macos-x86_64.tar.gz` | `sh install.sh` |
+| Linux x64 | `pal-0.3.0-linux-x86_64.tar.gz` | `sh install.sh` |
+
+macOS/Linux 的命令目录为 `~/.local/bin`，请加入 PATH；Windows 安装器设置当前用户 PATH，
+新开终端生效。随后运行 `pal --version` 和 `pal quickstart`。
+运行包未做 Apple 公证或 Windows 签名；系统要求、验证边界和卸载见[使用手册](docs/USER-GUIDE.md)。
+
+也可使用 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)
+安装源码或 wheel；在源码根目录运行 `uv tool install .`，或：
 
 ```sh
-uv tool install .
-pal quickstart
-```
-
-或者安装下载的发行文件：
-
-```sh
-uv tool install ./pal-0.2.4-py3-none-any.whl
+uv tool install ./pal-0.3.0-py3-none-any.whl
 pal quickstart
 ```
 
@@ -95,7 +98,12 @@ Web 支持详情与文件浏览、夜间模式、窄屏和统一操作反馈。�
 ## 升级与关闭
 
 如果 Web 正在运行，先在另一终端执行 `pal web stop`；没有运行则跳过停止步骤。
-然后在下载的新源码根目录安装，或将 `.` 换成本地新版 wheel 路径：
+运行包用户解压新版，再运行其安装脚本。uv 用户在下载的新源码根目录安装，
+或将 `.` 换成本地新版 wheel 路径：
+
+运行包升级须沿用原安装目录和命令目录；使用过自定义目录时继续传入原
+`PAL_INSTALL_DIR`/`PAL_BIN_DIR`，Windows 继续使用原 `-InstallDir`。需要迁移位置时，先从原
+安装目录运行卸载脚本，再按新位置安装。
 
 ```sh
 uv tool install --force --reinstall .

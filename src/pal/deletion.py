@@ -22,6 +22,7 @@ from .io import (
 from .library import doctor_library, load_json_object
 from .maintenance import cleanup_path, maintenance_lock
 from .paths import canonical_existing_root, require_inside, require_safe_id, validate_regular_tree
+from .platform_support import is_link, move_path
 from .production_history import history_marker_path
 from .publishing import library_lock, validate_production_version, validate_release
 from .schema_catalog import validate_config_instance, validate_instance
@@ -43,7 +44,7 @@ def _locked(library_root, config_root, *, recovery=False):
             mounts._activation_lock(config, library_id),
         ):
             transition = mounts._transition_path(config, library_id)
-            if transition.exists() or transition.is_symlink():
+            if transition.exists() or is_link(transition):
                 raise IntegrityError("存在未完成的生产切换，请先执行异常恢复")
             yield root, config, library_id
 
@@ -128,7 +129,7 @@ def _cache_parent(cache_root, library_id, version):
 
 
 def _orphan_marker(path):
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise IntegrityError("Claude 缓存回收标记异常")
     raw = path.read_bytes()
     if re.fullmatch(rb"[0-9]{10,16}", raw) is None:
@@ -246,7 +247,7 @@ def _archive_snapshot(root, version):
     if tree_digest(source) != version["tree_sha256"]:
         raise IntegrityError("待归档生产快照已漂移")
     target.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(source, target)
+    move_path(source, target)
     fsync_directory(target.parent)
     fsync_directory(source.parent)
 
@@ -334,7 +335,7 @@ def _detach_snapshot(library_id, version):
 
 
 def _erase(path):
-    if path.is_symlink():
+    if is_link(path):
         raise IntegrityError(f"不能清理符号链接：{path}")
     if not path.exists():
         return

@@ -13,6 +13,7 @@ from typing import Any
 from ..errors import CreationError, IntegrityError
 from ..io import sha256_bytes, sha256_file
 from ..paths import normalize_relative_path, require_inside, validate_regular_tree
+from ..platform_support import is_link
 from .base import ComponentTypeDriver, PayloadFile, ValidatedCandidate
 
 SKILL_COMPONENT_TYPE_ID = "skill"
@@ -182,7 +183,7 @@ class SkillComponentDriver(ComponentTypeDriver):
             raise IntegrityError("Skill driver received an artifact for another kind")
         expected = payload_root / f"skills/{artifact['unit_id']}/SKILL.md"
         matches = sorted(payload_root.glob("skills/*/SKILL.md"))
-        if matches != [expected] or expected.is_symlink() or not expected.is_file():
+        if matches != [expected] or is_link(expected) or not expected.is_file():
             raise IntegrityError(
                 f"Skill artifact must contain one canonical SKILL.md: {artifact['artifact_id']}"
             )
@@ -229,14 +230,14 @@ class SkillComponentDriver(ComponentTypeDriver):
         relative = source_skill.relative_to(payload_root).as_posix()
         projected_skill = projected_root / relative
         runtime_skill = runtime_root / relative
-        if projected_skill.is_symlink() or not projected_skill.is_file():
+        if is_link(projected_skill) or not projected_skill.is_file():
             raise IntegrityError(f"runtime projected Skill is unavailable: {projected_skill}")
         source_sha256 = sha256_file(source_skill)
         if sha256_file(projected_skill) != source_sha256:
             raise IntegrityError(
                 f"runtime projected Skill drifted: {production_artifact['artifact_id']}"
             )
-        if runtime_skill.is_symlink() or not runtime_skill.is_file():
+        if is_link(runtime_skill) or not runtime_skill.is_file():
             raise IntegrityError(f"runtime loaded Skill is unavailable: {runtime_skill}")
         if sha256_file(runtime_skill) != source_sha256:
             raise IntegrityError(

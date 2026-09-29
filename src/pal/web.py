@@ -15,7 +15,9 @@ from __future__ import annotations
 import errno
 import ipaddress
 import json
+import os
 import secrets
+import socket
 import webbrowser
 from http import HTTPStatus
 from http.client import HTTPConnection, HTTPException
@@ -35,6 +37,7 @@ from .io import atomic_replace_json
 from .library import doctor_development_context, load_json_object
 from .maintenance import cleanup_path, maintenance_lock, skill_action_path
 from .paths import canonical_existing_root, require_safe_id
+from .platform_support import is_link
 from .production_mount import recover_production
 from .publication import sync_production
 from .schema_catalog import validate_config_instance
@@ -704,7 +707,12 @@ def _status(root: Path, config_root: Path) -> dict[str, Any]:
 
 class _WebServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(self, address: tuple[str, int], library_root: Path, config_root: Path) -> None:
         super().__init__(address, _WebHandler)
@@ -1046,7 +1054,7 @@ def run_web(
         print("\nPAL Web 已停止。")
     finally:
         try:
-            if record_path is not None and record_path.is_file() and not record_path.is_symlink():
+            if record_path is not None and record_path.is_file() and not is_link(record_path):
                 try:
                     recorded = load_json_object(record_path)
                 except (PALError, OSError):
@@ -1060,7 +1068,7 @@ def run_web(
 
 def _web_record_path(config_root: Path, port: int) -> Path:
     directory = config_root / "web"
-    if directory.is_symlink():
+    if is_link(directory):
         raise PathSafetyError(f"PAL Web 记录目录不能是符号链接：{directory}")
     directory.mkdir(exist_ok=True)
     return directory / f"port-{port}.json"
@@ -1073,7 +1081,7 @@ def stop_web(*, config_root: Path | None = None, port: int = DEFAULT_PORT) -> in
         raise PathSafetyError("关闭服务时端口必须在 1 到 65535 之间")
     root = resolve_config_root(config_root, create=False)
     record_path = root / "web" / f"port-{port}.json"
-    if record_path.is_symlink() or not record_path.is_file():
+    if is_link(record_path) or not record_path.is_file():
         raise PALError(f"端口 {port} 没有可关闭的 PAL Web 服务记录")
     record = load_json_object(record_path)
     host, token, instance_id = (
@@ -1126,14 +1134,15 @@ def _web_url(host: str, port: int) -> str:
 def _existing_console(host: str, port: int) -> tuple[str, str, str | None] | None:
     """Recognize an existing console, including versions predating reuse support."""
 
+    context = _existing_console_context(host, port)
+    if context is not _CONTEXT_UNSUPPORTED:
+        return context
+
     # Direct loopback connection: never send library data to a proxy or follow redirects.
     connection = HTTPConnection(host, port, timeout=2)
     try:
         connection.request("GET", "/api/status")
         with connection.getresponse() as response:
-            if response.status == HTTPStatus.CONFLICT:
-                response.read(1024 * 1024 + 1)
-                return _existing_maintenance_console(host, port)
             if response.status != HTTPStatus.OK:
                 return None
             if response.headers.get_content_type() != "application/json":
@@ -1164,11 +1173,17 @@ def _existing_console(host: str, port: int) -> tuple[str, str, str | None] | Non
         connection.close()
 
 
-def _existing_maintenance_console(host: str, port: int) -> tuple[str, str, str] | None:
+_CONTEXT_UNSUPPORTED = object()
+
+
+def _existing_console_context(host: str, port: int) -> tuple[str, str, str] | None | object:
     connection = HTTPConnection(host, port, timeout=2)
     try:
         connection.request("GET", "/api/context")
         with connection.getresponse() as response:
+            if response.status == HTTPStatus.NOT_FOUND:
+                response.read(8193)
+                return _CONTEXT_UNSUPPORTED
             if (
                 response.status != HTTPStatus.OK
                 or response.headers.get_content_type() != "application/json"

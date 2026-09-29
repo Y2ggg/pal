@@ -26,6 +26,7 @@ Skill 组件。将来新增类型须先验证协议与适配，不通过伪装�
 | `skill_state.py`、`status.py`、`skill_actions.py` | 共用三层状态及预览/执行/恢复 |
 | `web.py`、`skill_browser.py` | 本机控制台、只读概览与文件预览 |
 | `schema_catalog.py`、`paths.py`、`io.py` | 结构校验、路径边界、原子文件写入 |
+| `locking.py`、`platform_support.py` | POSIX/Windows 文件锁、路径与外部进程边界 |
 | `targets/`、`components/` | CLI 与组件类型驱动 |
 | `usage.py`、`usage_events.py`、`deletion.py`、`production_history.py` | 旧受控记录、清理与历史数据恢复内核 |
 
@@ -49,3 +50,19 @@ Markdown 不执行 HTML，文件预览仅从已验证清单读取。访问边界
 自动化测试覆盖领域动作、schema、路径与故障恢复；浏览器脚本覆盖交互；双端原生模型任务
 验证实际发现和消费。这三个层次分别记录，不互相替代。构建指纹涵盖 Python 源码与直接依赖
 版本，服务启动后冻结，避免磁盘升级让旧进程冒充新版。
+
+## 原生平台与运行包
+
+文件锁在 POSIX 使用 flock，Windows 使用 LockFileEx，保留共享/独占及非阻塞语义。
+Windows 文件以二进制方式落盘，flush/fsync 后通过同卷 MoveFileExW WRITE_THROUGH 发布；
+Windows 没有 POSIX 目录 fsync，不声明两者具有完全等价的断电保证。既有 journal 和摘要仍用于
+中断恢复。路径拒绝 symlink、junction、其他重解析点及设备/ADS 别名。
+
+新建库的 portable-1 catalog 扩展绝对路径规则，使用独立 schema ID；旧 v1 catalog 仍按整套
+固定摘要验证，不改写。相对文件清单继续使用 POSIX 分隔符，绝对记录使用所在系统的本地路径。
+这不是跨操作系统直接移动库的能力。
+
+`packaging/` 在各 OS 原生构建运行包，包含源码副本以保持运行构建指纹的有效性。
+启动外部厂商 CLI 时清除冻结程序注入的动态库查找环境。Windows 标准 npm 包按 package.json
+的 bin 声明解析入口：原生 exe 直接执行，JavaScript 通过 Node 执行；拒绝越界入口，
+避免把用户路径拼接到 cmd.exe 命令串。

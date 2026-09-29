@@ -19,11 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - guarded by doctor_library on supported platforms
-    fcntl = None
-
+from . import locking as fcntl
 from .components import (
     SKILL_COMPONENT_TYPE_ID,
     PayloadFile,
@@ -55,6 +51,7 @@ from .paths import (
     require_safe_id,
     validate_regular_tree,
 )
+from .platform_support import is_link, move_path
 from .schema_catalog import TARGET_CLIS, validate_config_instance, validate_instance
 
 REQUEST_FIELDS = {"schema_version", "unit_id", "summary", "profile_by_cli"}
@@ -81,7 +78,7 @@ def resolve_library_root(
     start = canonical_existing_root(cwd or Path.cwd())
     for candidate in (start, *start.parents):
         manifest = candidate / "library.json"
-        if manifest.is_symlink():
+        if is_link(manifest):
             raise PathSafetyError(f"discovered library manifest is a symbolic link: {manifest}")
         if manifest.is_file():
             return canonical_existing_root(candidate)
@@ -106,7 +103,7 @@ def _revision_id(creation_id: str) -> str:
 
 def _load_request(path: Path) -> dict[str, Any]:
     absolute = Path(os.path.abspath(path))
-    if absolute.is_symlink() or not absolute.is_file():
+    if is_link(absolute) or not absolute.is_file():
         raise PathSafetyError(f"creation request must be a regular file: {absolute}")
     request = load_json_object(absolute)
     fields = REQUEST_FIELDS | (
@@ -165,7 +162,7 @@ def _validate_requested_profiles(
 
 
 def _load_profile_document(path: Path, expected_sha256: str, label: str) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise IntegrityError(f"{label} is unavailable: {path}")
     if sha256_file(path) != expected_sha256:
         raise IntegrityError(f"{label} SHA-256 mismatch")
@@ -321,7 +318,7 @@ def _transaction_root(root: Path, creation_id: str) -> Path:
 
 def _transaction_record(transaction_root: Path) -> tuple[Path, dict[str, Any]]:
     path = transaction_root / TRANSACTION_FILENAME
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise PathSafetyError(f"creation transaction record is unavailable: {path}")
     transaction = load_json_object(path)
     validate_instance("creation-transaction.schema.json", transaction)
@@ -333,7 +330,7 @@ def _safe_remove_temporary(path: Path, parent: Path) -> None:
         path.relative_to(parent)
     except ValueError as exc:  # pragma: no cover - defensive invariant
         raise CreationError(f"refusing to clean temporary creation path: {path}") from exc
-    if path.is_symlink() or not path.name.startswith(".pal-create-"):
+    if is_link(path) or not path.name.startswith(".pal-create-"):
         raise CreationError(f"refusing to clean unexpected creation path: {path}")
     shutil.rmtree(path)
 
@@ -357,9 +354,7 @@ def inspect_creation(
         candidates = [
             candidate.name
             for candidate in sorted(unit_root.iterdir(), key=lambda item: item.name.encode("utf-8"))
-            if candidate.is_dir()
-            and not candidate.is_symlink()
-            and (candidate / "unit.json").is_file()
+            if candidate.is_dir() and not is_link(candidate) and (candidate / "unit.json").is_file()
         ]
         if unit_id == context["library_id"]:
             prefix = f"{unit_id} 是外挂库 ID，不是 Skill 的 unit_id。"
@@ -423,7 +418,7 @@ def list_creation_units(library_root: Path, *, config_root: Path | None = None) 
 
     units: list[dict[str, Any]] = []
     for candidate in sorted(unit_root.iterdir(), key=lambda item: item.name.encode("utf-8")):
-        if candidate.is_symlink() or not candidate.is_dir():
+        if is_link(candidate) or not candidate.is_dir():
             raise PathSafetyError(f"development unit entry is invalid: {candidate}")
         unit_id = require_safe_id(candidate.name, "development unit directory")
         unit = load_json_object(candidate / "unit.json")
@@ -485,7 +480,7 @@ def begin_creation(
         if unit["current_revision_id"] != request["base_revision_id"]:
             raise CreationError("Skill 开发版本已变化，请基于当前 revision 重新开始更新")
         base = validate_development_revision(root, request["unit_id"], request["base_revision_id"])
-    elif unit_target.exists() or unit_target.is_symlink():
+    elif unit_target.exists() or is_link(unit_target):
         raise CreationError(
             "logical unit already exists; initial P1 does not patch existing units: "
             f"{request['unit_id']}"
@@ -547,7 +542,7 @@ def begin_creation(
                     shutil.copytree(source, destination, dirs_exist_ok=True)
         write_new_json(temporary / TRANSACTION_FILENAME, transaction)
         fsync_tree(temporary)
-        os.rename(temporary, final)
+        move_path(temporary, final)
         fsync_directory(parent)
         committed = True
     finally:
@@ -759,7 +754,7 @@ def _copy_context_snapshots(
     for category, entries in categories:
         for index, reference in enumerate(entries):
             source = Path(reference["path"])
-            if source.is_symlink() or sha256_file(source) != reference["sha256"]:
+            if is_link(source) or sha256_file(source) != reference["sha256"]:
                 raise IntegrityError(f"creation context reference drifted: {source}")
             relative = f"context/specifications/{category}/{index:03d}-{source.name}"
             target = revision_root / relative
@@ -769,7 +764,7 @@ def _copy_context_snapshots(
     profile_refs: list[dict[str, str]] = []
     for reference in plan["context"]["profile_refs"]:
         source = Path(reference["path"])
-        if source.is_symlink() or sha256_file(source) != reference["sha256"]:
+        if is_link(source) or sha256_file(source) != reference["sha256"]:
             raise IntegrityError(f"creation profile reference drifted: {source}")
         relative = f"context/profiles/{reference['profile_id']}.json"
         write_new_bytes(revision_root / relative, source.read_bytes())
@@ -786,7 +781,7 @@ def _prepare_unit(
 ) -> Path:
     prepared_parent = transaction_root / "prepared"
     if prepared_parent.exists():
-        if prepared_parent.is_symlink() or not prepared_parent.is_dir():
+        if is_link(prepared_parent) or not prepared_parent.is_dir():
             raise PathSafetyError(f"invalid prepared unit root: {prepared_parent}")
         validate_regular_tree(prepared_parent)
         shutil.rmtree(prepared_parent)
@@ -916,10 +911,10 @@ def _prepare_unit(
 @contextmanager
 def _unit_lock(root: Path, unit_id: str) -> Iterator[None]:
     if fcntl is None:  # pragma: no cover - doctor already rejects this platform
-        raise CreationError("P1 creation requires the POSIX lock backend")
+        raise CreationError("P1 creation requires a supported file lock backend")
     lock_parent = require_inside(root, ".pal/locks", "PAL lock root")
     lock_path = lock_parent / f"unit-{unit_id}.lock"
-    if lock_path.is_symlink():
+    if is_link(lock_path):
         raise PathSafetyError(f"unit lock cannot be a symbolic link: {lock_path}")
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
@@ -1023,7 +1018,7 @@ def _commit_update(root, target, transaction_root, request, plan, transaction, c
                 f"该 Skill 有未完成的持久化更新，请先重试 commit：{other['creation_id']}"
             )
     journal_path = transaction_root / "commit.json"
-    if journal_path.exists() or journal_path.is_symlink():
+    if journal_path.exists() or is_link(journal_path):
         journal = load_json_object(
             require_inside(transaction_root, "commit.json", "update journal")
         )
@@ -1070,7 +1065,7 @@ def _commit_update(root, target, transaction_root, request, plan, transaction, c
         )
         if tree_digest(prepared_revision) != journal["revision_tree_sha256"]:
             raise IntegrityError("prepared update revision has drifted")
-        os.rename(prepared_revision, revision_target)
+        move_path(prepared_revision, revision_target)
         fsync_directory(revision_target.parent)
     if tree_digest(revision_target) != journal["revision_tree_sha256"]:
         raise IntegrityError("pending update revision has drifted")
@@ -1123,7 +1118,7 @@ def commit_creation(
                     root, target, transaction_root, request, plan, transaction, candidates
                 )
                 formally_committed = True
-            elif target.exists() or target.is_symlink():
+            elif target.exists() or is_link(target):
                 recovered = _committed_result(root, transaction, plan)
                 formally_committed = True
             else:
@@ -1134,7 +1129,7 @@ def commit_creation(
                     transaction,
                     candidates,
                 )
-                os.rename(prepared, target)
+                move_path(prepared, target)
                 fsync_directory(target.parent)
                 formally_committed = True
                 recovered = _committed_result(root, transaction, plan)
