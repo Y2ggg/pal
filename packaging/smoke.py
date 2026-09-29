@@ -230,6 +230,30 @@ def main():
                 server.terminate()
                 server.wait(timeout=10)
             server.stderr.close()
+        restarted = subprocess.Popen(
+            [str(executable), "web", "--port", str(data["port"]), "--no-browser"],
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            record_path = root / "config/web" / f"port-{data['port']}.json"
+            deadline = time.monotonic() + 30
+            while not record_path.exists() and time.monotonic() < deadline:
+                if restarted.poll() is not None:
+                    raise RuntimeError(restarted.stderr.read().decode("utf-8"))
+                time.sleep(0.1)
+            assert record_path.exists(), "Restarted Web service record missing"
+            assert json.loads(record_path.read_bytes())["instance_id"] != data["instance_id"]
+            with urllib.request.urlopen(url + "api/context", timeout=10) as response:
+                assert json.load(response)["proof"] == "PAL_WEB_CONTEXT"
+            run("web", "stop", "--port", str(data["port"]))
+            assert restarted.wait(timeout=15) == 0
+        finally:
+            if restarted.poll() is None:
+                restarted.terminate()
+                restarted.wait(timeout=10)
+            restarted.stderr.close()
         run_uninstaller(program / uninstaller_name, environment, check=True)
         assert not program.exists()
         assert (library / "library.json").is_file()

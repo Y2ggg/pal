@@ -1134,14 +1134,15 @@ def _web_url(host: str, port: int) -> str:
 def _existing_console(host: str, port: int) -> tuple[str, str, str | None] | None:
     """Recognize an existing console, including versions predating reuse support."""
 
+    context = _existing_console_context(host, port)
+    if context is not _CONTEXT_UNSUPPORTED:
+        return context
+
     # Direct loopback connection: never send library data to a proxy or follow redirects.
     connection = HTTPConnection(host, port, timeout=2)
     try:
         connection.request("GET", "/api/status")
         with connection.getresponse() as response:
-            if response.status == HTTPStatus.CONFLICT:
-                response.read(1024 * 1024 + 1)
-                return _existing_maintenance_console(host, port)
             if response.status != HTTPStatus.OK:
                 return None
             if response.headers.get_content_type() != "application/json":
@@ -1172,11 +1173,17 @@ def _existing_console(host: str, port: int) -> tuple[str, str, str | None] | Non
         connection.close()
 
 
-def _existing_maintenance_console(host: str, port: int) -> tuple[str, str, str] | None:
+_CONTEXT_UNSUPPORTED = object()
+
+
+def _existing_console_context(host: str, port: int) -> tuple[str, str, str] | None | object:
     connection = HTTPConnection(host, port, timeout=2)
     try:
         connection.request("GET", "/api/context")
         with connection.getresponse() as response:
+            if response.status == HTTPStatus.NOT_FOUND:
+                response.read(8193)
+                return _CONTEXT_UNSUPPORTED
             if (
                 response.status != HTTPStatus.OK
                 or response.headers.get_content_type() != "application/json"

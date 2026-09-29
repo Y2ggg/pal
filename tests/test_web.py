@@ -64,6 +64,36 @@ def test_web_repeated_start_reuses_matching_console(tmp_path, monkeypatch, capsy
         server.server_close()
 
 
+def test_web_repeated_start_does_not_compute_full_status(tmp_path, monkeypatch, capsys):
+    library, config = _setup_library(tmp_path)
+    server, thread, base = _running_server(library, config)
+    status = web_module._status
+    calls = []
+
+    def fail_on_probe(*args, **kwargs):
+        calls.append((args, kwargs))
+        if len(calls) > 1:
+            pytest.fail("Existing-console recognition computed the full status")
+        return status(*args, **kwargs)
+
+    monkeypatch.setattr(web_module, "_status", fail_on_probe)
+    try:
+        assert (
+            web_module.run_web(
+                library, config_root=config, port=server.server_port, open_browser=False
+            )
+            == 0
+        )
+        assert "已在运行" in capsys.readouterr().out
+        assert thread.is_alive()
+        assert base.endswith(f":{server.server_port}")
+        assert len(calls) == 1
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+        server.server_close()
+
+
 def test_web_rejects_reusing_an_outdated_console(tmp_path, monkeypatch, capsys):
     library, config = _setup_library(tmp_path)
     server, thread, base = _running_server(library, config)
@@ -194,6 +224,13 @@ def test_web_unknown_listener_shows_address_without_opening(tmp_path, monkeypatc
 
         def do_GET(self):  # noqa: N802
             requests.append(self.path)
+            if self.path == "/api/context":
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                return
             status = {"redirect": 302, "unhealthy": 409}.get(kind, 200)
             body = {
                 "html": b"<html>Other service</html>",
@@ -229,10 +266,7 @@ def test_web_unknown_listener_shows_address_without_opening(tmp_path, monkeypatc
         error = capsys.readouterr().err
         assert f"http://127.0.0.1:{server.server_port}/" in error
         assert "未能确认" in error and "--port 0" in error
-        expected_requests = (
-            ["/api/status", "/api/context"] if kind == "unhealthy" else ["/api/status"]
-        )
-        assert not opened and requests == expected_requests
+        assert not opened and requests == ["/api/context", "/api/status"]
     finally:
         server.shutdown()
         thread.join(timeout=3)
@@ -255,6 +289,67 @@ def test_web_probe_timeout_closes_connection(monkeypatch):
     monkeypatch.setattr(web_module, "HTTPConnection", Connection)
     assert web_module._existing_console("127.0.0.1", 8787) is None
     assert events == ["closed"]
+
+
+def test_web_probe_closes_context_and_legacy_status_connections(monkeypatch):
+    events = []
+    responses = iter(
+        [
+            (404, b"{}"),
+            (
+                200,
+                json.dumps(
+                    {
+                        "library": {"library_id": "library", "library_root": "/library"},
+                        "config_root": "/config",
+                        "production": {},
+                        "units": [],
+                        "default_binding": {},
+                    }
+                ).encode(),
+            ),
+        ]
+    )
+
+    class Response:
+        def __init__(self, status, body):
+            self.status = status
+            self.body = body
+            self.headers = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def get_content_type(self):
+            return "application/json"
+
+        def read(self, _limit):
+            return self.body
+
+    class Connection:
+        def __init__(self, host, port, timeout):
+            assert (host, port, timeout) == ("127.0.0.1", 8787, 2)
+
+        def request(self, method, path):
+            events.append((method, path))
+
+        def getresponse(self):
+            return Response(*next(responses))
+
+        def close(self):
+            events.append("closed")
+
+    monkeypatch.setattr(web_module, "HTTPConnection", Connection)
+    assert web_module._existing_console("127.0.0.1", 8787) == ("/library", "/config", None)
+    assert events == [
+        ("GET", "/api/context"),
+        "closed",
+        ("GET", "/api/status"),
+        "closed",
+    ]
 
 
 def test_web_port_zero_prints_actual_bound_port(tmp_path, monkeypatch, capsys):
