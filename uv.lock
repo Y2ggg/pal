@@ -142,7 +142,7 @@ requires-dist = [
     { name = "pyinstaller", marker = "extra == 'bundle'", specifier = ">=6.22.3,<7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.2.0,<10" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.8,<4" },
-    { name = "ruff", marker = "extra == 'test'", specifier = ">=0.17.5,<1" },
+    { name = "ruff", marker = "extra == 'test'", specifier = ">=0.17.6,<1" },
 ]
 provides-extras = ["test", "bundle"]
 
