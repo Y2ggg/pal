@@ -126,12 +126,9 @@ def test_dsh_production_projection_installs_verifies_and_removes(
     home = Path(os.environ["DSH_HOME"])
     skill_file = home / "skills" / "dsh-skill" / "SKILL.md"
     assert skill_file.is_file()
-    skill_file.write_text("drift\n", encoding="utf-8")
+    skill_file.write_bytes(b"drift\n")
     with pytest.raises(PALError):
         _verify_dsh_installed(plan)
-    skill_file.write_text(
-        plan.cli_projection_files["dsh"]["skills/dsh-skill/SKILL.md"].decode("utf-8"),
-        encoding="utf-8",
-    )
+    skill_file.write_bytes(plan.cli_projection_files["dsh"]["skills/dsh-skill/SKILL.md"])
     _remove_dsh(plan)
     assert not (home / "skills" / "dsh-skill").exists()

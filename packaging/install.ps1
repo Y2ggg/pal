@@ -35,9 +35,15 @@ try {
     & (Join-Path $stage 'runtime\pal.exe') --version
     if ($LASTEXITCODE -ne 0) { throw '安装包运行验证失败。' }
     if (Test-Path $InstallDir) { Move-Item $InstallDir $backup }
-    try { Move-Item $stage $InstallDir } catch {
+    $moved = $false
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try { Move-Item $stage $InstallDir; $moved = $true; break } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (!$moved) {
         if (Test-Path $backup) { Move-Item $backup $InstallDir }
-        throw
+        throw '安装目录切换失败；请关闭占用该目录的程序后重试。'
     }
     $entries = @([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' | Where-Object { $_ })
     if ($entries -notcontains $bin) {
