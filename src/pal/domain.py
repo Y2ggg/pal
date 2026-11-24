@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import IntegrityError
-from .schema_catalog import TARGET_CLIS
+from .schema_catalog import TARGET_CLI_SETS, TARGET_CLIS
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,7 @@ class LogicalPlugin:
 def decode_format_v1_plugin(
     plugin_id: str,
     artifacts: list[dict[str, Any]],
+    target_clis: list[str] | tuple[str, ...] | None = None,
 ) -> LogicalPlugin:
     """Decode the single-component PAL v1 representation into the neutral domain."""
 
@@ -54,7 +55,12 @@ def decode_format_v1_plugin(
     if len(types) != 1 or not all(isinstance(item, str) and item for item in types):
         raise IntegrityError("format-v1 logical Plugin must encode exactly one component type")
     covered = [target for artifact in artifacts for target in artifact["covered_clis"]]
-    if covered != TARGET_CLIS:
+    if target_clis is None:
+        inferred = list(dict.fromkeys(covered))
+        expected = inferred if inferred in TARGET_CLI_SETS else TARGET_CLIS
+    else:
+        expected = list(target_clis)
+    if covered != expected:
         raise IntegrityError(
             "format-v1 component variant coverage must be disjoint and target-complete"
         )

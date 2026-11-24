@@ -22,7 +22,7 @@ from typing import Any
 from .adapters import install_creation_adapter
 from .compatibility import detect_cli_compatibility
 from .config_mount import bind_default_creation_library, default_config_root, mount_config
-from .errors import PALError, QuickstartCancelled, QuickstartError, UsageError
+from .errors import CompatibilityError, PALError, QuickstartCancelled, QuickstartError, UsageError
 from .integrity import check_library_contents
 from .library import doctor_library, initialize_library, load_json_object
 from .paths import require_safe_id
@@ -240,9 +240,21 @@ def run_quickstart(
 
     try:
         compatibility: dict[str, dict[str, Any]] = {}
-        progress("检查 Claude Code 与 Codex 兼容性")
+        progress("检查 Claude Code、Codex 与 DeepSeek Harness 兼容性")
+        labels = {
+            "claude-code": "Claude Code",
+            "codex": "Codex",
+            "dsh": "DeepSeek Harness",
+        }
         for cli_id in TARGET_CLIS:
-            compatibility[cli_id] = detect_cli_compatibility(cli_id).diagnostic()
+            try:
+                compatibility[cli_id] = detect_cli_compatibility(cli_id).diagnostic()
+            except CompatibilityError as exc:
+                progress(f"{labels[cli_id]} 未检测到，跳过：{exc}")
+        if not compatibility:
+            raise QuickstartError(
+                "未检测到可用的目标 CLI；请至少安装 Claude Code、Codex 或 DeepSeek Harness"
+            )
         completed.append(stage)
 
         stage = "p0"
@@ -267,26 +279,26 @@ def run_quickstart(
         completed.append(stage)
 
         stage = "config-mount"
-        progress("建立 Claude Code 与 Codex 的独立创建配置挂载")
+        progress("建立各目标 CLI 的独立创建配置挂载")
         config_mounts = {
             cli_id: mount_config(
                 answers.library_path,
                 cli_id,
                 config_root=answers.config_root,
             )
-            for cli_id in TARGET_CLIS
+            for cli_id in compatibility
         }
         completed.append(stage)
 
         stage = "creation-adapter"
-        progress("安装 Claude Code 与 Codex 创建入口")
+        progress("安装各目标 CLI 的创建入口")
         creation_adapters = {
             cli_id: install_creation_adapter(
                 answers.library_path,
                 cli_id,
                 config_root=answers.config_root,
             )
-            for cli_id in TARGET_CLIS
+            for cli_id in compatibility
         }
         completed.append(stage)
 

@@ -53,13 +53,13 @@ def test_e2e_p0_01_acc_001_initializes_complete_empty_library(tmp_path: Path) ->
     manifest = json.loads((library_root / "library.json").read_text(encoding="utf-8"))
     active = json.loads((library_root / "production" / "active.json").read_text(encoding="utf-8"))
     registry = json.loads(
-        (library_root / "schemas" / "v1" / "index.json").read_text(encoding="utf-8")
+        (library_root / "schemas" / "v2" / "index.json").read_text(encoding="utf-8")
     )
 
     assert manifest["library_id"] == "acceptance-library"
-    assert manifest["target_clis"] == ["claude-code", "codex"]
-    assert set(manifest["specifications"]["cli"]) == {"claude-code", "codex"}
-    assert len(manifest["capability_profiles"]) == 2
+    assert manifest["target_clis"] == ["claude-code", "codex", "dsh"]
+    assert set(manifest["specifications"]["cli"]) == {"claude-code", "codex", "dsh"}
+    assert len(manifest["capability_profiles"]) == 3
     assert tuple(entry["name"] for entry in registry["schemas"]) == SCHEMA_FILENAMES
     assert active == {
         "schema_version": 1,
@@ -238,4 +238,4 @@ def test_prd_spec_002_acc_012_doctor_rejects_rehashed_unvalidated_profile(
     process = run_pal("doctor", "--library", str(library_root))
 
     assert process.returncode == 20
-    assert "not validated by PAL 0.1.0" in str(parse_output(process, "stderr")["error"])
+    assert "not validated by this PAL version" in str(parse_output(process, "stderr")["error"])

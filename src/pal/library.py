@@ -36,6 +36,7 @@ from .paths import (
 )
 from .platform_support import is_link, move_path
 from .schema_catalog import (
+    LEGACY_TARGET_CLIS,
     PORTABLE_SCHEMA_CATALOG,
     SCHEMA_CATALOG,
     SCHEMA_FILENAMES,
@@ -45,20 +46,23 @@ from .schema_catalog import (
     validate_instance,
 )
 
-SCHEMA_REGISTRY_PATH = "schemas/v1/index.json"
+SCHEMA_REGISTRY_PATH = "schemas/v2/index.json"
 COMMON_SPEC_PATH = "development/specifications/common/skill-v1.md"
 CLAUDE_SPEC_PATH = "development/specifications/cli/claude-code/skill-v1.md"
 CODEX_SPEC_PATH = "development/specifications/cli/codex/skill-v1.md"
+DSH_SPEC_PATH = "development/specifications/cli/dsh/skill-v1.md"
 DESIGN_RULES_PATH = "development/design-rules/skill-v1.md"
 BASIC_PROFILE_PATH = "development/specifications/common/skill-md-v1-basic.profile.json"
+SHARED_PROFILE_PATH = "development/specifications/common/skill-md-v1-shared.profile.json"
 CLAUDE_PROFILE_PATH = (
     "development/specifications/cli/claude-code/skill-md-v1-claude-model-pinned.profile.json"
 )
 REQUIRED_DIRECTORIES = (
-    "schemas/v1",
+    "schemas/v2",
     "development/specifications/common",
     "development/specifications/cli/claude-code",
     "development/specifications/cli/codex",
+    "development/specifications/cli/dsh",
     "development/design-rules",
     "development/units",
     "releases/units",
@@ -96,6 +100,16 @@ Traceability: PRD-SPEC-001, PRD-SPEC-002, PRD-CREATE-003; ACC-002, ACC-006.
 - The shared basic profile is supported.
 - The Claude `model` frontmatter field is not accepted by this profile.
 - Plugin manifest, marketplace, and installation metadata are directed projection concerns.
+"""
+
+DSH_SPEC = """# DeepSeek Harness Skill profile constraints v1
+
+Traceability: PRD-SPEC-001, PRD-SPEC-002, PRD-CREATE-003; ACC-002, ACC-006.
+
+- Protocol evidence captured on DeepSeek Harness `0.2.2-rc.5`; discovery uses the file root.
+- The shared basic profile is supported: one `<name>/SKILL.md` directory bundle.
+- `/` and the model catalog read the same skill registry; no CLI executable or plugin manifest.
+- Installation is a PAL-owned directory projection under the configured DSH skill root.
 """
 
 DESIGN_RULES = """# PAL initial Skill design rules
@@ -153,11 +167,11 @@ def _reference(path: Path, root: Path) -> dict[str, str]:
 
 def _basic_profile() -> dict[str, Any]:
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": 1,
         "profile_id": "skill-md-v1-basic",
         "artifact_kind": "skill",
         "extends": None,
-        "covered_clis": TARGET_CLIS,
+        "covered_clis": LEGACY_TARGET_CLIS,
         "cli_versions": {"claude-code": "2.1.234", "codex": "0.147.0"},
         "canonical_path": "skills/<skill-name>/SKILL.md",
         "frontmatter_fields": [
@@ -176,7 +190,7 @@ def _basic_profile() -> dict[str, Any]:
 
 def _claude_model_profile() -> dict[str, Any]:
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": 1,
         "profile_id": "skill-md-v1-claude-model-pinned",
         "artifact_kind": "skill",
         "extends": "skill-md-v1-basic",
@@ -198,6 +212,33 @@ def _claude_model_profile() -> dict[str, Any]:
     }
 
 
+def _shared_profile() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "profile_id": "skill-md-v1-shared",
+        "artifact_kind": "skill",
+        "extends": None,
+        "covered_clis": TARGET_CLIS,
+        "cli_versions": {
+            "claude-code": "2.1.234",
+            "codex": "0.147.0",
+            "dsh": "0.2.2-rc.5",
+        },
+        "canonical_path": "skills/<skill-name>/SKILL.md",
+        "frontmatter_fields": [
+            {"name": "name", "required": True, "value_type": "string"},
+            {"name": "description", "required": True, "value_type": "string"},
+        ],
+        "name_constraints": {"pattern": "^[a-z0-9-]+$", "max_length": 64},
+        "description_constraints": {
+            "max_length": 1024,
+            "forbid_angle_brackets": True,
+        },
+        "body_format": "markdown",
+        "captured_at": "2026-11-23T00:00:00+08:00",
+    }
+
+
 def _create_directories(root: Path) -> None:
     for relative in REQUIRED_DIRECTORIES:
         (root / relative).mkdir(parents=True, exist_ok=False)
@@ -206,13 +247,13 @@ def _create_directories(root: Path) -> None:
 def _write_schemas(root: Path) -> dict[str, Any]:
     entries: list[dict[str, str]] = []
     for filename in SCHEMA_FILENAMES:
-        path = root / "schemas" / "v1" / filename
+        path = root / "schemas" / "v2" / filename
         material = schema_bytes(filename)
         write_new_bytes(path, material)
         entries.append(
             {
                 "name": filename,
-                "path": f"schemas/v1/{filename}",
+                "path": f"schemas/v2/{filename}",
                 "$id": PORTABLE_SCHEMA_CATALOG[filename]["$id"],
                 "sha256": sha256_bytes(material),
             }
@@ -227,11 +268,14 @@ def _write_schemas(root: Path) -> dict[str, Any]:
     return registry
 
 
-def _write_seed_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _write_seed_context(
+    root: Path,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     text_files = {
         COMMON_SPEC_PATH: COMMON_SPEC.encode("utf-8"),
         CLAUDE_SPEC_PATH: CLAUDE_SPEC.encode("utf-8"),
         CODEX_SPEC_PATH: CODEX_SPEC.encode("utf-8"),
+        DSH_SPEC_PATH: DSH_SPEC.encode("utf-8"),
         DESIGN_RULES_PATH: DESIGN_RULES.encode("utf-8"),
     }
     for relative, material in text_files.items():
@@ -239,11 +283,13 @@ def _write_seed_context(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
     basic = _basic_profile()
     claude = _claude_model_profile()
-    validate_instance("capability-profile.schema.json", basic)
-    validate_instance("capability-profile.schema.json", claude)
+    shared = _shared_profile()
+    for profile in (basic, claude, shared):
+        validate_instance("capability-profile.schema.json", profile)
     write_new_json(root / BASIC_PROFILE_PATH, basic)
     write_new_json(root / CLAUDE_PROFILE_PATH, claude)
-    return basic, claude
+    write_new_json(root / SHARED_PROFILE_PATH, shared)
+    return basic, claude, shared
 
 
 def _library_manifest(
@@ -252,6 +298,7 @@ def _library_manifest(
     created_at: str,
     basic_profile: dict[str, Any],
     claude_profile: dict[str, Any],
+    shared_profile: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
@@ -260,7 +307,7 @@ def _library_manifest(
         "release_root": "releases",
         "production_root": "production",
         "usage_record_root": "records/usage",
-        "schemas_root": "schemas/v1",
+        "schemas_root": "schemas/v2",
         "schema_registry": _reference(root / SCHEMA_REGISTRY_PATH, root),
         "target_clis": TARGET_CLIS,
         "specifications": {
@@ -268,6 +315,7 @@ def _library_manifest(
             "cli": {
                 "claude-code": [_reference(root / CLAUDE_SPEC_PATH, root)],
                 "codex": [_reference(root / CODEX_SPEC_PATH, root)],
+                "dsh": [_reference(root / DSH_SPEC_PATH, root)],
             },
         },
         "design_rules": [_reference(root / DESIGN_RULES_PATH, root)],
@@ -284,6 +332,12 @@ def _library_manifest(
                 "cli_versions": claude_profile["cli_versions"],
                 **_reference(root / CLAUDE_PROFILE_PATH, root),
             },
+            {
+                "profile_id": shared_profile["profile_id"],
+                "covered_clis": shared_profile["covered_clis"],
+                "cli_versions": shared_profile["cli_versions"],
+                **_reference(root / SHARED_PROFILE_PATH, root),
+            },
         ],
         "created_at": created_at,
         "pal_format_version": PAL_FORMAT_VERSION,
@@ -292,7 +346,7 @@ def _library_manifest(
 
 def _active_pointer(library_id: str) -> dict[str, Any]:
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": 1,
         "library_id": library_id,
         "active_production_version_id": None,
         "production_manifest": None,
@@ -304,7 +358,7 @@ def _active_pointer(library_id: str) -> dict[str, Any]:
 def _build_library_tree(root: Path, library_id: str) -> None:
     _create_directories(root)
     _write_schemas(root)
-    basic_profile, claude_profile = _write_seed_context(root)
+    basic_profile, claude_profile, shared_profile = _write_seed_context(root)
     created_at = utc_now()
     manifest = _library_manifest(
         root,
@@ -312,6 +366,7 @@ def _build_library_tree(root: Path, library_id: str) -> None:
         created_at,
         basic_profile,
         claude_profile,
+        shared_profile,
     )
     active = _active_pointer(library_id)
     validate_instance("library.schema.json", manifest)
@@ -395,7 +450,7 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
         "schemas",
     }
     if set(registry) != expected_keys:
-        raise SchemaValidationError("schema registry fields do not match the v1 contract")
+        raise SchemaValidationError("schema registry fields do not match the v2 contract")
     if registry["schema_version"] != SCHEMA_VERSION:
         raise SchemaValidationError("unsupported schema registry version")
     if registry["pal_format_version"] != PAL_FORMAT_VERSION:
@@ -419,7 +474,7 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
         filename = entry["name"]
         if filename not in SCHEMA_CATALOG:
             raise SchemaValidationError(f"unknown registered schema: {filename}")
-        if entry["path"] != f"schemas/v1/{filename}":
+        if entry["path"] != f"schemas/v2/{filename}":
             raise SchemaValidationError(f"registered schema path is invalid: {filename}")
         if entry["$id"] != catalog[filename]["$id"]:
             raise SchemaValidationError(f"registered schema ID is invalid: {filename}")
@@ -432,14 +487,14 @@ def _verify_schema_registry(root: Path, manifest: dict[str, Any]) -> None:
             f"schema {filename}",
         )
         if entry["sha256"] != sha256_bytes(formatted_json_bytes(catalog[filename])):
-            raise IntegrityError(f"registered schema differs from PAL v1 catalog: {filename}")
+            raise IntegrityError(f"registered schema differs from PAL v2 catalog: {filename}")
         if load_json_object(schema_path) != catalog[filename]:
             raise IntegrityError(
                 f"registered schema bytes decode to unexpected content: {filename}"
             )
         names.append(filename)
     if tuple(names) != SCHEMA_FILENAMES:
-        raise SchemaValidationError("schema registry order does not match the v1 catalog")
+        raise SchemaValidationError("schema registry order does not match the v2 catalog")
 
 
 def _verify_context_references(root: Path, manifest: dict[str, Any]) -> None:
@@ -464,6 +519,7 @@ def _verify_context_references(root: Path, manifest: dict[str, Any]) -> None:
     expected_profiles = {
         "skill-md-v1-basic": _basic_profile(),
         "skill-md-v1-claude-model-pinned": _claude_model_profile(),
+        "skill-md-v1-shared": _shared_profile(),
     }
     profile_ids: set[str] = set()
     for index, reference in enumerate(manifest["capability_profiles"]):
@@ -480,7 +536,9 @@ def _verify_context_references(root: Path, manifest: dict[str, Any]) -> None:
             raise IntegrityError(f"duplicate capability profile ID: {profile_id}")
         profile_ids.add(profile_id)
         if profile_id not in expected_profiles or profile != expected_profiles[profile_id]:
-            raise IntegrityError(f"capability profile is not validated by PAL 0.1.0: {profile_id}")
+            raise IntegrityError(
+                f"capability profile is not validated by this PAL version: {profile_id}"
+            )
         for field in ("profile_id", "covered_clis", "cli_versions"):
             if reference[field] != profile[field]:
                 raise IntegrityError(

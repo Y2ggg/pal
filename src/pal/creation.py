@@ -14,7 +14,7 @@ import os
 import secrets
 import shlex
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -101,7 +101,7 @@ def _revision_id(creation_id: str) -> str:
     return f"revision-{creation_id.removeprefix('creation-')}"
 
 
-def _load_request(path: Path) -> dict[str, Any]:
+def _load_request(path: Path, target_clis: Sequence[str] | None = None) -> dict[str, Any]:
     absolute = Path(os.path.abspath(path))
     if is_link(absolute) or not absolute.is_file():
         raise PathSafetyError(f"creation request must be a regular file: {absolute}")
@@ -130,12 +130,28 @@ def _load_request(path: Path) -> dict[str, Any]:
         raise SchemaValidationError(
             f"creation request summary exceeds {MAX_REQUEST_SUMMARY} characters"
         )
+    expected_targets = list(target_clis) if target_clis is not None else TARGET_CLIS
     profiles = request["profile_by_cli"]
-    if not isinstance(profiles, dict) or set(profiles) != set(TARGET_CLIS):
-        raise SchemaValidationError("profile_by_cli must contain exactly claude-code and codex")
-    for cli_id in TARGET_CLIS:
+    if (
+        isinstance(profiles, dict)
+        and set(profiles)
+        == {
+            "claude-code",
+            "codex",
+        }
+        and set(expected_targets) == set(TARGET_CLIS)
+    ):
+        # A 0.3.0 creation entry sends only the two legacy profile keys. The
+        # shared profile is the DSH-compatible default and keeps old clients
+        # working while new entries send all three keys explicitly.
+        profiles["dsh"] = "skill-md-v1-shared"
+    if not isinstance(profiles, dict) or set(profiles) != set(expected_targets):
+        raise SchemaValidationError(
+            "profile_by_cli must contain exactly: " + ", ".join(expected_targets)
+        )
+    for cli_id in expected_targets:
         require_safe_id(profiles[cli_id], f"profile_by_cli.{cli_id}")
-    request["profile_by_cli"] = {cli_id: profiles[cli_id] for cli_id in TARGET_CLIS}
+    request["profile_by_cli"] = {cli_id: profiles[cli_id] for cli_id in expected_targets}
     return request
 
 
@@ -147,10 +163,11 @@ def _profile_references(root: Path) -> dict[str, dict[str, Any]]:
 def _validate_requested_profiles(
     root: Path,
     request: dict[str, Any],
+    target_clis: Sequence[str],
 ) -> dict[str, dict[str, Any]]:
     available = _profile_references(root)
     selected: dict[str, dict[str, Any]] = {}
-    for cli_id in TARGET_CLIS:
+    for cli_id in target_clis:
         profile_id = request["profile_by_cli"][cli_id]
         reference = available.get(profile_id)
         if reference is None:
@@ -242,6 +259,7 @@ def _artifact_id(
     creation_id: str,
     profile_id: str,
     covered_clis: list[str],
+    target_clis: Sequence[str],
 ) -> str:
     material = canonical_json_bytes(
         {
@@ -251,7 +269,7 @@ def _artifact_id(
         }
     )
     digest = sha256_bytes(material)[:12]
-    scope = "shared" if covered_clis == TARGET_CLIS else covered_clis[0]
+    scope = "shared" if covered_clis == list(target_clis) else covered_clis[0]
     return f"artifact-{scope}-{digest}"
 
 
@@ -262,10 +280,11 @@ def _build_plan(
     creation_id: str,
     created_by_cli: str,
 ) -> dict[str, Any]:
-    selected_profiles = _validate_requested_profiles(root, request)
+    target_clis = list(context["target_clis"])
+    selected_profiles = _validate_requested_profiles(root, request, target_clis)
     profile_documents = _selected_profile_documents(root, selected_profiles)
     groups: dict[str, list[str]] = {}
-    for cli_id in TARGET_CLIS:
+    for cli_id in target_clis:
         groups.setdefault(request["profile_by_cli"][cli_id], []).append(cli_id)
 
     artifacts: list[dict[str, Any]] = []
@@ -273,7 +292,7 @@ def _build_plan(
     for profile_id, covered_clis in groups.items():
         driver = component_type_driver_for_profile(profile_documents[profile_id])
         kind_ids.add(driver.type_id)
-        artifact_id = _artifact_id(creation_id, profile_id, covered_clis)
+        artifact_id = _artifact_id(creation_id, profile_id, covered_clis, target_clis)
         artifacts.append(
             {
                 "artifact_id": artifact_id,
@@ -292,7 +311,7 @@ def _build_plan(
         "unit_id": request["unit_id"],
         "request_summary": request["summary"],
         "created_by_cli": created_by_cli,
-        "target_clis": TARGET_CLIS.copy(),
+        "target_clis": target_clis,
         "profile_by_cli": request["profile_by_cli"],
         "context": _context_snapshot(root, context, selected_profiles),
         "artifacts": artifacts,
@@ -460,7 +479,7 @@ def begin_creation(
         raise CreationError(f"unsupported creation CLI: {cli_id}")
     root = canonical_existing_root(library_root)
     context = resolve_creation_context(root, config_root=config_root)
-    request = _load_request(request_file)
+    request = _load_request(request_file, context["target_clis"])
     from .skill_state import require_live_skill
 
     require_live_skill(root, request["unit_id"])
@@ -507,7 +526,7 @@ def begin_creation(
             "path": REQUEST_FILENAME,
             "sha256": sha256_bytes(request_material),
         },
-        "target_clis": TARGET_CLIS.copy(),
+        "target_clis": list(context["target_clis"]),
         "profile_ids": list(dict.fromkeys(request["profile_by_cli"].values())),
         "created_at": created_at,
         "updated_at": created_at,
@@ -555,7 +574,7 @@ def begin_creation(
         "unit_id": request["unit_id"],
         "revision_id": plan["revision_id"],
         "transaction_path": str(final / TRANSACTION_FILENAME),
-        "target_clis": TARGET_CLIS.copy(),
+        "target_clis": plan["target_clis"],
         "context": {
             "references": context["references"],
             "profile_ids": context["profile_ids"],
@@ -619,7 +638,7 @@ def _validate_plan_and_request(
         raise IntegrityError(f"creation request snapshot is not a file: {request_path}")
     if sha256_file(request_path) != transaction["request"]["sha256"]:
         raise IntegrityError("creation request snapshot SHA-256 mismatch")
-    request = _load_request(request_path)
+    request = _load_request(request_path, context["target_clis"])
 
     plan_path = require_inside(transaction_root, PLAN_FILENAME, "creation plan")
     plan = load_json_object(plan_path)
@@ -702,7 +721,7 @@ def _validate_candidate_layout(
         raise CreationError("candidate directory inventory does not match the PAL output contract")
 
     coverage = [cli for artifact in plan["artifacts"] for cli in artifact["covered_clis"]]
-    if coverage != TARGET_CLIS:
+    if coverage != list(plan["target_clis"]):
         raise CreationError("artifact coverage must be disjoint and complete in target CLI order")
     return plan["artifacts"]
 
@@ -749,6 +768,7 @@ def _copy_context_snapshots(
         ("common", references["common_specifications"]),
         ("cli/claude-code", references["cli_specifications"]["claude-code"]),
         ("cli/codex", references["cli_specifications"]["codex"]),
+        ("cli/dsh", references["cli_specifications"]["dsh"]),
         ("design-rules", references["design_rules"]),
     ]
     for category, entries in categories:
@@ -885,7 +905,7 @@ def _prepare_unit(
         "source_files": [{"path": source_relative, "sha256": sha256_bytes(source_material)}],
         "artifacts": artifact_refs,
         "created_by_cli": transaction["created_by_cli"],
-        "target_clis": TARGET_CLIS.copy(),
+        "target_clis": list(plan["target_clis"]),
         "specification_refs": specification_refs,
         "profile_refs": profile_refs,
         "created_at": created_at,

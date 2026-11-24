@@ -213,7 +213,11 @@ def test_monitor_never_reports_pointer_equality_as_healthy(mounted, monkeypatch)
     monkeypatch.setattr(monitor, "_inventory", inventory)
     result = monitor.inspect_installations(history["library"], config_root=history["config"])
     states = {target["cli_id"]: target["mount"]["state"] for target in result["targets"]}
-    assert states == {"claude-code": "healthy", "codex": "missing"}
+    assert states == {
+        "claude-code": "healthy",
+        "codex": "missing",
+        "dsh": "unavailable",
+    }
     assert result["production_version_id"] == result["mounted_version_id"]
     assert result["checked_at"]
 

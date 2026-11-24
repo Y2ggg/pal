@@ -638,7 +638,9 @@ def test_v1_namespace_migration_preserves_old_bytes_and_active_releases(tmp_path
     commit_unit(tmp_path, library, config, "example")
     new = publish_unit(library, "example", config_root=config, sync=True)
     validated = validate_production_version(library, new["production_version_id"])
-    old_id = _production_version_id(validated["releases"], 1)
+    old_id = _production_version_id(
+        validated["releases"], validated["production"]["target_clis"], 1
+    )
     old_root = library / "production/versions" / old_id
     shutil.copytree(validated["manifest_path"].parent, old_root)
     old_manifest = {**validated["production"], "schema_version": 1, "production_version_id": old_id}
@@ -1076,7 +1078,7 @@ def test_skill_details_use_production_content_and_keep_directed_cli_variants(
     assert details["production"]["artifacts"] == details["development"]["artifacts"]
     assert sorted(a["covered_clis"] for a in details["production"]["artifacts"]) == [
         ["claude-code"],
-        ["codex"],
+        ["codex", "dsh"],
     ]
     # Development damage must never be presented as deployed content.
     development_skill(library, "directed-details", revision).write_text(

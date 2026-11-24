@@ -414,7 +414,13 @@ def resolve_creation_context(
     config_root: Path | None = None,
     require_writable_development: bool = True,
 ) -> dict[str, Any]:
-    """Resolve both CLI mounts into a validated, read-only P1 context."""
+    """Resolve the library target context from the manifest and available mounts.
+
+    Traceability: PRD-MOUNT-001, PRD-CREATE-001; ACC-002, ACC-003, ACC-004,
+    ACC-012. A target may be absent from this machine; its creation profile and
+    specification still come from the library manifest, so a DSH-only setup can
+    create and publish without Claude Code or Codex installed.
+    """
 
     root = canonical_existing_root(library_root)
     doctor_development_context(root, require_writable_development=require_writable_development)
@@ -423,31 +429,31 @@ def resolve_creation_context(
     mounts: dict[str, dict[str, Any]] = {}
     for cli_id in TARGET_CLIS:
         path = destination_root / "mounts" / "config" / manifest["library_id"] / f"{cli_id}.json"
-        # Do not create directories or records during a read-only resolution.
-        mounts[cli_id] = validate_config_mount(
-            path,
-            root,
-            expected_cli=cli_id,
-            require_writable_development=require_writable_development,
+        if path.exists() or is_link(path):
+            mounts[cli_id] = validate_config_mount(
+                path,
+                root,
+                expected_cli=cli_id,
+                require_writable_development=require_writable_development,
+            )
+    if not mounts:
+        raise PathSafetyError(
+            "no PAL configuration mount is available for this library; run Quickstart first"
         )
-
-    common = mounts[TARGET_CLIS[0]]["references"]["common_specifications"]
-    design_rules = mounts[TARGET_CLIS[0]]["references"]["design_rules"]
+    context = _manifest_context(root, manifest, TARGET_CLIS[0])
     return {
         "library_id": manifest["library_id"],
         "library_root": str(root),
-        "development_root": mounts[TARGET_CLIS[0]]["development_root"],
-        "production_root": mounts[TARGET_CLIS[0]]["production_root"],
-        "library_manifest_sha256": mounts[TARGET_CLIS[0]]["library_manifest_sha256"],
+        "development_root": context["development_root"],
+        "production_root": context["production_root"],
+        "library_manifest_sha256": context["library_manifest_sha256"],
         "target_clis": TARGET_CLIS.copy(),
         "references": {
-            "common_specifications": common,
-            "cli_specifications": {
-                cli_id: mounts[cli_id]["references"]["cli_specifications"] for cli_id in TARGET_CLIS
-            },
-            "design_rules": design_rules,
+            "common_specifications": context["common_specifications"],
+            "cli_specifications": context["cli_specifications"],
+            "design_rules": context["design_rules"],
         },
-        "profile_ids": {cli_id: mounts[cli_id]["profile_ids"] for cli_id in TARGET_CLIS},
+        "profile_ids": context["profile_ids"],
         "mounts": mounts,
     }
 
@@ -481,7 +487,7 @@ def bind_default_creation_library(
                 destination_root / "mounts" / "config" / context["library_id"] / f"{cli_id}.json"
             ),
         }
-        for cli_id in TARGET_CLIS
+        for cli_id in context["mounts"]
     }
     record = {
         "schema_version": 1,
@@ -550,7 +556,7 @@ def resolve_default_creation_library(
     )
     if context["library_id"] != record["library_id"] or context["library_root"] != str(root):
         raise IntegrityError("default creation binding library identity has drifted")
-    for cli_id in TARGET_CLIS:
+    for cli_id in record["config_mounts"]:
         expected_path = (
             destination_root / "mounts" / "config" / context["library_id"] / f"{cli_id}.json"
         )

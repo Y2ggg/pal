@@ -38,12 +38,12 @@ from .targets import target_driver
 
 PLUGIN_NAME = "pal"
 SKILL_NAME = "pal-create-skill"
-CREATION_LAYOUT_VERSION = "native-v8"
-CREATION_ADAPTER_SUFFIX = "native.8"
+CREATION_LAYOUT_VERSION = "native-v9"
+CREATION_ADAPTER_SUFFIX = "native.9"
 
 CREATE_SKILL_TEMPLATE = """---
 name: pal-create-skill
-description: Create, update, publish and mount PAL Skills for Claude Code and Codex.
+description: Create, update, publish and mount PAL Skills for Claude Code, Codex and DSH.
 ---
 
 # PAL cross-CLI Skill creation
@@ -74,10 +74,10 @@ creator and do not write a formal result into a CLI-private Skill directory.
    a string value is invalid. For an update, use the same four fields plus `base_revision_id` and
    set `schema_version` to the JSON number `2`, as described below. Never write request or helper
    files into this Skill's base directory, any plugin directory, or an PAL library.
-2. Set `profile_by_cli` keys in this order: `claude-code`, then `codex`. Use
-   `skill-md-v1-basic` for both unless the request explicitly needs Claude's native `model`
+2. Set `profile_by_cli` keys in this order: `claude-code`, then `codex`, then `dsh`. Use
+   `skill-md-v1-shared` for all three unless the request explicitly needs Claude's native `model`
    declaration field; in that case use `skill-md-v1-claude-model-pinned` for Claude and
-   `skill-md-v1-basic` for Codex. Do not invent another profile.
+   `skill-md-v1-shared` for Codex and DSH. Do not invent another profile.
 3. Run `pal create begin --cli {cli_id} --request-file <request.json> --config-root {config_root}`.
 4. Read the returned candidate list and the mounted specification/design-rule references. Write
    the required `SKILL.md` at each returned `skill_path`. Create any supporting references,
@@ -96,7 +96,8 @@ creator and do not write a formal result into a CLI-private Skill directory.
    Publication and CLI mounting are separate manual actions; follow the management section below
    only for actions the user explicitly requested. An authorization already given still applies.
 
-The basic profile permits exactly `name` and `description` frontmatter. The Claude model-pinned
+The shared profile permits exactly `name` and `description` frontmatter and is shared by all
+three targets. The Claude model-pinned
 profile additionally requires `model`; PAL preserves that field but does not guarantee the model
 used by the target CLI. Every instruction body must be non-empty Markdown.
 
@@ -178,12 +179,12 @@ def _projection_files(cli_id: str, config_root: Path) -> tuple[str, dict[str, by
         description="PAL cross-CLI Skill creation entry",
         marketplace_display_name="PAL",
         display_name="PAL",
-        short_description="Create one Skill for Claude Code and Codex.",
+        short_description="Create one Skill for Claude Code, Codex and DeepSeek Harness.",
         long_description=(
             "Uses mounted PAL specifications and a staged transaction to create a "
-            "cross-CLI Skill in the development library."
+            "cross-CLI Skill shared by Claude Code, Codex and DeepSeek Harness."
         ),
-        default_prompt="Use $pal-create-skill to create a cross-CLI Skill.",
+        default_prompt="Use /pal-create-skill to create a cross-CLI Skill.",
         payload_files={f"skills/{SKILL_NAME}/SKILL.md": _creation_skill(cli_id, config_root)},
     )
     if cli_id == "claude-code":
@@ -299,12 +300,22 @@ def prepare_creation_adapter(
         "library_id": context["library_id"],
         "cli_id": cli_id,
         "adapter_version": __version__,
+        "projection_root": str(projection_root),
         "plugin_root": str(projection_root / plugin_relative),
         "tree_sha256": tree_digest(projection_root),
         "minimum_cli_version": target_driver(cli_id).minimum_version,
         "verified_cli_versions": sorted(target_driver(cli_id).verified_versions),
         "idempotent": idempotent,
     }
+    if cli_id == "dsh":
+        result.update(
+            {
+                "marketplace_name": "",
+                "marketplace_root": "",
+                "marketplace_manifest": "",
+            }
+        )
+        return result
     marketplace_root = projection_root / ("marketplace" if cli_id == "codex" else "")
     marketplace_manifest = marketplace_root / (
         ".agents/plugins/marketplace.json"
@@ -559,6 +570,36 @@ def _ensure_claude_projection(executable: str, adapter: dict[str, Any]) -> None:
         raise IntegrityError("installed Claude creation Skill does not match the PAL projection")
 
 
+def _install_dsh_creation(adapter: dict[str, Any]) -> bool:
+    from .targets.dsh import dsh_installed, dsh_skill_root, resolve_dsh_home
+
+    home = resolve_dsh_home()
+    if not dsh_installed(home):
+        raise CreationError("未检测到 DeepSeek Harness；请先在本机打开 DSH，或显式设置 DSH_HOME")
+    source = Path(adapter["projection_root"]) / "skills" / SKILL_NAME
+    if is_link(source) or not source.is_dir():
+        raise IntegrityError("DSH creation projection is missing its Skill bundle")
+    target_root = dsh_skill_root(home)
+    target = target_root / SKILL_NAME
+    if target.exists() or is_link(target):
+        if is_link(target) or not target.is_dir() or tree_digest(target) != tree_digest(source):
+            raise CreationError(f"DSH 技能根已存在不同内容的 {SKILL_NAME}；拒绝覆盖非 PAL 归属内容")
+        return True
+    target_root.mkdir(parents=True, exist_ok=True)
+    staging = target_root / f".pal-adapter-{secrets.token_hex(8)}.tmp"
+    committed = False
+    try:
+        shutil.copytree(source, staging)
+        fsync_tree(staging)
+        move_path(staging, target)
+        fsync_directory(target_root)
+        committed = True
+    finally:
+        if not committed and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+    return False
+
+
 def install_creation_adapter(
     library_root: Path,
     cli_id: str,
@@ -574,6 +615,9 @@ def install_creation_adapter(
     config = resolve_config_root(config_root, create=True)
     with _activation_lock(config, "system-creation"):
         adapter = prepare_creation_adapter(library_root, cli_id, config_root=config)
+        if cli_id == "dsh":
+            idempotent = _install_dsh_creation(adapter)
+            return {**adapter, "installed": True, "executable": "", "idempotent": idempotent}
         executable = require_compatible_cli(cli_id).executable
         if repair:
             state = _creation_status(
@@ -632,6 +676,10 @@ def launch_creation_entry(
     if transition.exists() or is_link(transition):
         raise CreationError(
             f"cannot launch a creation entry during a production transition: {transition}"
+        )
+    if cli_id == "dsh":
+        raise CreationError(
+            "DeepSeek Harness 不支持由 PAL 启动会话；请打开 DSH 后通过 /pal-create-skill 使用"
         )
     adapter = install_creation_adapter(root, cli_id, config_root=config_root)
     executable = adapter["executable"]

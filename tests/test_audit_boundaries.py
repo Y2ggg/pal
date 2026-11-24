@@ -81,7 +81,9 @@ def test_v1_mount_monitor_uses_original_target_version(tmp_path, simulated_clis,
     root, config, _ = initial(tmp_path)
     result = publish_unit(root, "example", config_root=config)
     validated = validate_production_version(root, result["production_version_id"])
-    version = publishing._production_version_id(validated["releases"], 1)
+    version = publishing._production_version_id(
+        validated["releases"], validated["production"]["target_clis"], 1
+    )
     old = root / "production/versions" / version
     shutil.copytree(validated["manifest_path"].parent, old)
     (old / "production.json").write_bytes(

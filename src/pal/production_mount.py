@@ -31,7 +31,7 @@ from .adapters import require_compatible_cli
 from .compatibility import CliCompatibility
 from .components import SKILL_COMPONENT_TYPE_ID, component_type_driver
 from .config_mount import resolve_config_root
-from .errors import IntegrityError, PathSafetyError, ProductionError
+from .errors import CompatibilityError, IntegrityError, PathSafetyError, ProductionError
 from .io import (
     atomic_replace_json,
     canonical_json_bytes,
@@ -77,6 +77,7 @@ class TargetPlan:
     config_root: Path
     library_id: str
     version_id: str
+    target_clis: tuple[str, ...]
     validated: dict[str, Any]
     plugin_name: str
     marketplace_name: str
@@ -93,6 +94,7 @@ class TargetPlan:
     executables: dict[str, str]
     install_roots: dict[str, Path]
     install_files: dict[str, dict[str, bytes]]
+    dsh_home: Path | None
 
 
 def _mkdir_descendant(path: Path, root: Path) -> None:
@@ -306,11 +308,12 @@ def _projection_files(
     validated: dict[str, Any],
     library_id: str,
     version_id: str,
+    target_clis: Sequence[str],
 ) -> tuple[str, str, dict[str, dict[str, bytes]]]:
     stable = validated["production"]["schema_version"] == 2
     plugin_name, marketplace_name = _projection_identity(library_id, version_id, stable=stable)
     by_cli: dict[str, dict[str, bytes]] = {}
-    for cli_id in TARGET_CLIS:
+    for cli_id in target_clis:
         payload = _selected_payload_files(validated, cli_id)
         _, files = target_driver(cli_id).project_plugin(
             plugin_name=plugin_name,
@@ -331,10 +334,13 @@ def _projection_files(
     return plugin_name, marketplace_name, by_cli
 
 
-def _merge_projection_files(by_cli: Mapping[str, Mapping[str, bytes]]) -> dict[str, bytes]:
+def _merge_projection_files(
+    by_cli: Mapping[str, Mapping[str, bytes]],
+    target_clis: Sequence[str],
+) -> dict[str, bytes]:
     return {
         f"{cli_id}/{relative}": material
-        for cli_id in TARGET_CLIS
+        for cli_id in target_clis
         for relative, material in by_cli[cli_id].items()
     }
 
@@ -358,7 +364,15 @@ def _detect_supported_executables() -> dict[str, str]:
 
 
 def _detect_target_compatibilities() -> dict[str, CliCompatibility]:
-    return {cli_id: require_compatible_cli(cli_id) for cli_id in TARGET_CLIS}
+    available: dict[str, CliCompatibility] = {}
+    for cli_id in TARGET_CLIS:
+        try:
+            available[cli_id] = require_compatible_cli(cli_id)
+        except CompatibilityError:
+            # A peer target may be absent on this machine. Its projection still
+            # exists in the immutable version; only installation is skipped.
+            continue
+    return available
 
 
 def _mount_records(
@@ -366,6 +380,7 @@ def _mount_records(
     validated: dict[str, Any],
     library_id: str,
     version_id: str,
+    target_clis: Sequence[str],
     projection_root: Path,
     projection_digests: Mapping[str, str],
     cli_versions: Mapping[str, str],
@@ -382,7 +397,9 @@ def _mount_records(
     ]
     records: dict[str, dict[str, Any]] = {}
     files: dict[str, bytes] = {}
-    for cli_id in TARGET_CLIS:
+    for cli_id in target_clis:
+        if cli_id not in cli_versions:
+            continue
         artifacts = [
             {
                 "artifact_id": item["artifact_id"],
@@ -430,7 +447,7 @@ def _mount_records(
                 "path": f"{cli_id}.json",
                 "sha256": sha256_bytes(files[f"{cli_id}.json"]),
             }
-            for cli_id in TARGET_CLIS
+            for cli_id in records
         ],
         "pal_version": generator_version,
         "verified_at": verified_at,
@@ -447,9 +464,9 @@ def _mount_metadata(
     detected_versions: Mapping[str, str],
 ) -> tuple[str, dict[str, str], str]:
     if not (mount_root.exists() or is_link(mount_root)):
-        if set(detected_versions) != set(TARGET_CLIS):
+        if not set(detected_versions):
             raise ProductionError(
-                "new production mount requires compatibility evidence for all targets"
+                "new production mount requires compatibility evidence for at least one target"
             )
         return fallback_timestamp, dict(detected_versions), __version__
     if is_link(mount_root) or not mount_root.is_dir():
@@ -461,7 +478,8 @@ def _mount_metadata(
     if not isinstance(timestamp, str):  # pragma: no cover - schema establishes this
         raise IntegrityError("production mount verified_at is invalid")
     versions: dict[str, str] = {}
-    for cli_id in TARGET_CLIS:
+    record_names = [item["cli_id"] for item in bundle["cli_records"]]
+    for cli_id in record_names:
         record = load_json_object(mount_root / f"{cli_id}.json")
         validate_instance(MOUNT_SCHEMA, record)
         if (
@@ -489,13 +507,15 @@ def _build_target_plan(
     if create_layout and not (library_root / "production/versions" / version_id).is_dir():
         raise ProductionError("生产内容仅存于旧证据归档或已缺失；请先正常发布，再同步到 CLI")
     validated = validate_production_version(library_root, version_id)
+    target_clis = tuple(validated["production"]["target_clis"])
     plugin_name, marketplace_name, by_cli = _projection_files(
         validated,
         library_id,
         version_id,
+        target_clis,
     )
-    projection_files = _merge_projection_files(by_cli)
-    projection_digests = {cli_id: _files_digest(by_cli[cli_id]) for cli_id in TARGET_CLIS}
+    projection_files = _merge_projection_files(by_cli, target_clis)
+    projection_digests = {cli_id: _files_digest(by_cli[cli_id]) for cli_id in target_clis}
     projection_parent = config_root / "projections" / library_id / "versions"
     mount_parent = config_root / "mounts" / "production" / library_id / "versions"
     if create_layout:
@@ -509,7 +529,7 @@ def _build_target_plan(
     mount_root = mount_parent / version_id
     install_files: dict[str, dict[str, bytes]] = {}
     install_roots: dict[str, Path] = {}
-    for cli_id in TARGET_CLIS:
+    for cli_id in target_clis:
         files = target_driver(cli_id).project_install_root(
             plugin_name=plugin_name,
             marketplace_name=marketplace_name,
@@ -535,10 +555,23 @@ def _build_target_plan(
         install_roots[cli_id] = install_parent / version_id
     if compatibilities is None and executables is None:
         compatibilities = _detect_target_compatibilities()
-    detected_versions = {
-        cli_id: compatibility.actual_version
-        for cli_id, compatibility in (compatibilities or {}).items()
-    }
+    if compatibilities is not None:
+        detected_versions = {
+            cli_id: compatibility.actual_version
+            for cli_id, compatibility in compatibilities.items()
+        }
+    elif executables is not None:
+        # Read-only re-validation of an existing plan may pass executables
+        # without re-running probes. The mount bundle normally supplies the
+        # versions; this fallback only serves a fresh layout.
+        detected_versions = {cli_id: "unknown" for cli_id in executables}
+    else:
+        detected_versions = {}
+    from .targets.dsh import resolve_dsh_home
+
+    dsh_home = resolve_dsh_home() if "dsh" in target_clis else None
+    if dsh_home is not None and not dsh_home.is_dir():
+        dsh_home = None
     verified_at, mount_versions, mount_generator = _mount_metadata(
         mount_root,
         activation_time,
@@ -547,6 +580,7 @@ def _build_target_plan(
     _, bundle, mount_files = _mount_records(
         validated=validated,
         library_id=library_id,
+        target_clis=target_clis,
         version_id=version_id,
         projection_root=projection_root,
         projection_digests=projection_digests,
@@ -576,6 +610,7 @@ def _build_target_plan(
         config_root=config_root,
         library_id=library_id,
         version_id=version_id,
+        target_clis=target_clis,
         validated=validated,
         plugin_name=plugin_name,
         marketplace_name=marketplace_name,
@@ -599,6 +634,7 @@ def _build_target_plan(
         ),
         install_roots=install_roots,
         install_files=install_files,
+        dsh_home=dsh_home,
     )
 
 
@@ -1029,10 +1065,71 @@ def _remove_claude(plan: TargetPlan) -> None:
 def _installable_clis(plan: TargetPlan) -> tuple[str, ...]:
     """Return the CLIs whose persistent installation PAL drives for this plan."""
 
-    return tuple(cli_id for cli_id in TARGET_CLIS if plan.executables.get(cli_id))
+    return tuple(
+        cli_id
+        for cli_id in plan.target_clis
+        if cli_id == "dsh"
+        and plan.dsh_home is not None
+        and "dsh" in plan.cli_projection_files
+        or cli_id != "dsh"
+        and bool(plan.executables.get(cli_id))
+    )
+
+
+def _dsh_units(plan: TargetPlan) -> dict[str, dict[str, bytes]]:
+    prefix = "skills/"
+    units: dict[str, dict[str, bytes]] = {}
+    for relative, material in plan.cli_projection_files.get("dsh", {}).items():
+        if not relative.startswith(prefix):
+            raise IntegrityError(f"DSH projection file is outside the skill root: {relative}")
+        rest = relative[len(prefix) :]
+        unit, _, child = rest.partition("/")
+        if not unit or not child:
+            raise IntegrityError(f"DSH projection file has no Skill directory: {relative}")
+        units.setdefault(unit, {})[child] = material
+    return units
+
+
+def _install_dsh(plan: TargetPlan) -> None:
+    if plan.dsh_home is None:
+        raise ProductionError("DeepSeek Harness home is unavailable")
+    skill_root = plan.dsh_home / "skills"
+    skill_root.mkdir(parents=True, exist_ok=True)
+    for unit, files in sorted(_dsh_units(plan).items()):
+        _materialize_files(
+            skill_root,
+            skill_root / unit,
+            files,
+            prefix=f".install-dsh-{unit}-",
+            label=f"DSH Skill {unit}",
+        )
+
+
+def _verify_dsh_installed(plan: TargetPlan) -> dict[str, Any]:
+    if plan.dsh_home is None:
+        raise ProductionError("DeepSeek Harness home is unavailable")
+    units = _dsh_units(plan)
+    for unit, files in sorted(units.items()):
+        _verify_files(plan.dsh_home / "skills" / unit, files, f"DSH Skill {unit}")
+    return {"cli_id": "dsh", "skill_count": len(units)}
+
+
+def _remove_dsh(plan: TargetPlan) -> None:
+    if plan.dsh_home is None:
+        return
+    for unit, files in sorted(_dsh_units(plan).items()):
+        target = plan.dsh_home / "skills" / unit
+        if not (target.exists() or is_link(target)):
+            continue
+        _verify_files(target, files, f"DSH Skill {unit}")
+        shutil.rmtree(target)
+        fsync_directory(target.parent)
 
 
 def _install_target(plan: TargetPlan, cli_id: str) -> None:
+    if cli_id == "dsh":
+        _install_dsh(plan)
+        return
     if cli_id == "codex":
         _install_codex(plan)
         return
@@ -1040,6 +1137,9 @@ def _install_target(plan: TargetPlan, cli_id: str) -> None:
 
 
 def _remove_target(plan: TargetPlan, cli_id: str) -> None:
+    if cli_id == "dsh":
+        _remove_dsh(plan)
+        return
     if cli_id == "codex":
         _remove_codex(plan)
         return
@@ -1047,12 +1147,16 @@ def _remove_target(plan: TargetPlan, cli_id: str) -> None:
 
 
 def _verify_installed(plan: TargetPlan, cli_id: str) -> dict[str, Any]:
+    if cli_id == "dsh":
+        return _verify_dsh_installed(plan)
     if cli_id == "codex":
         return _verify_codex_installed(plan)
     return _verify_claude_installed(plan)
 
 
 def _target_plugin_id(plan: TargetPlan, cli_id: str) -> str:
+    if cli_id == "dsh":
+        return plan.plugin_name
     if cli_id == "codex":
         return _plugin_id(plan)
     return _claude_plugin_id(plan)
@@ -1064,7 +1168,8 @@ def _native_verify(plan: TargetPlan) -> None:
         plan.projection_files,
         f"production projection {plan.version_id}",
     )
-    _run_claude_validation(plan)
+    if "claude-code" in plan.target_clis and plan.executables.get("claude-code"):
+        _run_claude_validation(plan)
     # The Codex manifest/marketplace and complete payload are compared to the
     # deterministic expected byte map above.  Installation occurs only after
     # TARGET_VERIFIED is durable.
@@ -1154,7 +1259,9 @@ def validate_production_mount(
         "production_manifest_sha256": plan.validated["manifest_sha256"],
         "bundle": str(plan.mount_root / "bundle.json"),
         "bundle_sha256": plan.bundle_sha256,
-        "projection_roots": {cli_id: str(plan.projection_root / cli_id) for cli_id in TARGET_CLIS},
+        "projection_roots": {
+            cli_id: str(plan.projection_root / cli_id) for cli_id in plan.target_clis
+        },
         "projection_tree_sha256": plan.cli_projection_digests,
         "plugin_name": plan.plugin_name,
         "marketplace_name": plan.marketplace_name,
@@ -1250,13 +1357,13 @@ def _new_transition(
                         cli_id,
                         installed=cli_id == "codex" and old_codex_installed,
                     )
-                    if old_plan is not None
+                    if old_plan is not None and cli_id in old_plan.target_clis
                     else None
                 ),
                 "target_projection": _projection_snapshot(target, cli_id, installed=False),
                 "install_status": "unchanged",
             }
-            for cli_id in TARGET_CLIS
+            for cli_id in target.target_clis
         },
         "recovery_action": "restore-old",
         "created_at": created_at,
@@ -1289,7 +1396,7 @@ def _advance_transition(
     if recovery_action is not None:
         transition["recovery_action"] = recovery_action
     if phase == "TARGET_VERIFIED":
-        for cli_id in TARGET_CLIS:
+        for cli_id in transition["clis"]:
             transition["clis"][cli_id]["install_status"] = "offline-verified"
     for cli_id, status in (install_status or {}).items():
         transition["clis"][cli_id]["install_status"] = status
@@ -1500,7 +1607,7 @@ def _verify_transition_objects(
 ) -> None:
     """Verify persisted identities and both immutable sides before recovery actions."""
 
-    for cli_id in TARGET_CLIS:
+    for cli_id in transition["clis"]:
         snapshot = transition["clis"][cli_id]["target_projection"]
         _verify_snapshot_identity(snapshot, target, cli_id)
         old_snapshot = transition["clis"][cli_id]["old_projection"]
@@ -1860,6 +1967,10 @@ def active_runtime_context(
 
     if cli_id not in TARGET_CLIS:
         raise ProductionError(f"unsupported runtime CLI: {cli_id}")
+    if cli_id == "dsh":
+        raise ProductionError(
+            "DeepSeek Harness 不提供可由 PAL 启动的 CLI 运行通道；请在 DSH 会话中使用 /name"
+        )
     root = canonical_existing_root(library_root)
     context = doctor_development_context(root)
     pal_config_root = resolve_config_root(config_root, create=False)

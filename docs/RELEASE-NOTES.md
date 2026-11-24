@@ -1,4 +1,67 @@
+# PAL 0.4.0 · DeepSeek Harness 第三目标
+
+PAL（Personal Ability Library，个人能力库）在 Claude Code、Codex 与 DeepSeek Harness 中
+创建、更新和使用 Skill，在本地 Web 查看完整文件、发布、挂载和维护。采用 MIT 许可。
+
+0.4.0 把 DeepSeek Harness（DSH）加入为与 Claude Code、Codex 平级的第三目标；库格式升到
+2.0，旧库通过一次 `pal migrate` 迁移。已发布标签和资产不覆盖。
+
+## 下载与安装
+
+从 [v0.4.0 Release](https://github.com/Y2ggg/pal/releases/tag/v0.4.0) 下载对应文件并核对
+SHA256SUMS。
+
+| 系统 | 安装包 |
+|---|---|
+| Windows x64 | pal-0.4.0-windows-x86_64.zip |
+| macOS Apple Silicon | pal-0.4.0-macos-arm64.tar.gz |
+| macOS Intel | pal-0.4.0-macos-x86_64.tar.gz |
+| Linux x64 | pal-0.4.0-linux-x86_64.tar.gz |
+
+运行包包含 Python 3.11.15、运行依赖和安装/卸载脚本；同时提供 wheel 和源码包。
+升级须沿用原安装目录和命令目录；卸载保留用户库、配置和 CLI 插件。
+
+## 本版变化
+
+- 新增 DSH 第三目标：库格式 2.0、`skill-md-v1-shared` 共享 profile、三目标创建/发布/挂载。
+- DSH 使用 `~/.dsh/skills` 文件系统技能根，`/` 菜单可发现已挂载 Skill；创建入口为
+  `/pal-create-skill`。DSH 不需要 Claude Code/Codex 存在。
+- 新增 `pal migrate`：先备份库与配置，再为每个已发布 Skill 生成三目标 revision/release；
+  旧记录、旧生产版本和旧投影保持原字节可读。
+- 系统创建入口更新为 `0.4.0+native.9`；三目标可独立安装，缺少某个 CLI 不阻塞其他目标。
+- 安装监测与 Web 增加 DSH 文件健康；DSH 不提供 `pal run` 运行通道，其 P2 以 `/` 实际
+  加载为准。
+
+程序升级后重启 Web，在“CLI 与系统”更新系统入口。开发提交、发布和 CLI 挂载仍分别手动触发。
+
+## 迁移
+
+0.3.0 库需执行：
+
+```sh
+pal migrate --library /path/to/library
+```
+
+迁移前自动备份到 `PAL Migration Backups`；失败恢复备份。迁移会新建三目标 revision/release，
+不改写旧记录。旧两项目标记录仍可只读校验，但不会挂载到 DSH。
+
+## 验证
+
+本机全量 449 项收集，441 通过、8 跳过；Ruff 通过。正式库迁移、三端安装健康、
+DSH 文件校验和旧生产只读校验通过，系统入口更新为 `0.4.0+native.9`。
+三平台 CI 与安装包生命周期需在公开仓 PR 的矩阵完成后补充；未完成的平台结果不写成通过。
+
+DSH 的文件发现与 `/` 目录已验证；本轮未调用模型，不能把文件发现当作 Skill 效果测试。
+
+## 边界
+
+DSH 的 P2 以用户新会话 `/` 加载为准，不提供自动模型运行或 usage JSONL；`pal run` 和
+`launch use --cli dsh` 明确拒绝。三层手动流程、主动卸载语义和日常记录/P3 延期保持。
+
+---
+
 # PAL 0.3.0 · 原生三平台发行
+
 
 PAL（Personal Ability Library，个人能力库）在普通 Claude Code/Codex 中创建、更新与使用
 Skill，在本地 Web 查看完整文件、发布、挂载和维护。采用 MIT 许可。

@@ -382,6 +382,7 @@ def _setup_library(tmp_path: Path) -> tuple[Path, Path]:
     initialize_library(library, "web-library")
     mount_config(library, "claude-code", config_root=config)
     mount_config(library, "codex", config_root=config)
+    mount_config(library, "dsh", config_root=config)
     return library, config
 
 
@@ -394,8 +395,9 @@ def _commit_unit(tmp_path: Path, library: Path, config: Path, unit_id: str) -> N
                 "unit_id": unit_id,
                 "summary": "Web console test unit",
                 "profile_by_cli": {
-                    "claude-code": "skill-md-v1-basic",
-                    "codex": "skill-md-v1-basic",
+                    "claude-code": "skill-md-v1-shared",
+                    "codex": "skill-md-v1-shared",
+                    "dsh": "skill-md-v1-shared",
                 },
             }
         )
@@ -719,7 +721,7 @@ def test_skill_details_read_validated_text_and_reject_drift(tmp_path: Path) -> N
         assert payload["production"] is None
         artifact = payload["development"]["artifacts"][0]
         assert artifact["description"] == "Web console test skill."
-        assert artifact["covered_clis"] == ["claude-code", "codex"]
+        assert artifact["covered_clis"] == ["claude-code", "codex", "dsh"]
         assert "Return the web console test result." in artifact["instructions"]
         skill = next((library / "development/units/details-skill").rglob("SKILL.md"))
         skill.write_text("tampered", encoding="utf-8")

@@ -31,6 +31,7 @@ from .deletion import recover_deletion
 from .errors import PALError, QuickstartCancelled, QuickstartError, UsageError
 from .integrity import check_library_contents
 from .library import initialize_library
+from .migration import migrate_library_v2
 from .production_mount import (
     launch_production_entry,
     recover_production,
@@ -62,12 +63,18 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pal",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="PAL · 个人能力库：跨 Claude Code / Codex 复用 Skill（命令 pal）",
-        epilog="日常：quickstart 配置一次 → 直接打开 claude / codex 创建、更新和使用 Skill。\n"
-        "管理：web 打开控制台；publish 手动发布到生产；sync 手动同步到 CLI；doctor 检查完整性。\n"
-        "底层/自动化命令（非日常必经）：init、mount、create、release、skill、production、recover。\n"
-        "兼容/诊断：compatibility、launch、run、usage。各命令后加 --help 查看参数。\n"
-        "日常记录与评分暂缓；完整性检查不代表 Skill 效果测试。",
+        description=(
+            "PAL · 个人能力库：跨 Claude Code、Codex、DeepSeek Harness 复用 Skill（命令 pal）"
+        ),
+        epilog=(
+            "日常：quickstart 配置一次 → 打开 Claude Code、Codex 或 DeepSeek Harness\n"
+            "创建、更新和使用 Skill。\n"
+            "管理：web 打开控制台；publish 手动发布到生产；sync 手动同步到 CLI；"
+            "doctor 检查完整性。\n"
+            "底层/自动化命令（非日常必经）：init、mount、create、release、skill、production、recover。\n"
+            "兼容/诊断：compatibility、launch、run、usage。各命令后加 --help 查看参数。\n"
+            "日常记录与评分暂缓；完整性检查不代表 Skill 效果测试。"
+        ),
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__} (build {BUILD_ID})"
@@ -78,7 +85,7 @@ def _parser() -> argparse.ArgumentParser:
 
     quickstart = commands.add_parser(
         "quickstart",
-        help="初始化或复用外挂库，并准备 Claude Code/Codex 创建入口",
+        help="初始化或复用外挂库，并准备各目标 CLI 创建入口",
     )
     quickstart.add_argument(
         "--answers",
@@ -98,6 +105,19 @@ def _parser() -> argparse.ArgumentParser:
         help="检查外挂库完整性（不执行 Skill）",
     )
     doctor.add_argument("--library", required=True, type=Path)
+
+    migrate = commands.add_parser(
+        "migrate",
+        help="将 0.3.0 库格式迁移到 2.0（新增 DeepSeek Harness 目标）",
+    )
+    migrate.add_argument("--library", required=True, type=Path)
+    migrate.add_argument("--config-root", type=Path)
+    migrate.add_argument("--backup-root", type=Path)
+    migrate.add_argument(
+        "--no-activate",
+        action="store_true",
+        help="只重建库内容，不安装或激活到 CLI（用于副本预检）",
+    )
 
     compatibility = commands.add_parser(
         "compatibility",
@@ -197,7 +217,7 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--unit", required=True)
     publish.add_argument("--config-root", type=Path)
     publish.add_argument("--sync", action="store_true", help="明确同时执行发布和 CLI 同步")
-    sync = commands.add_parser("sync", help="将当前已发布内容手动同步到 Claude Code/Codex")
+    sync = commands.add_parser("sync", help="将当前已发布内容手动同步到已安装的目标 CLI")
     sync.add_argument("--library", type=Path)
     sync.add_argument("--config-root", type=Path)
 
@@ -347,11 +367,15 @@ def _emit_quickstart_summary(result: dict[str, object]) -> None:
     print("PAL 设置完成")
     print(f"状态：{status_labels.get(status, status)}")
     print(f"外挂库：{result['library_root']}")
-    for cli_id, label in (("claude-code", "Claude Code"), ("codex", "Codex")):
+    labels = {"claude-code": "Claude Code", "codex": "Codex", "dsh": "DeepSeek Harness"}
+    for cli_id in ("claude-code", "codex", "dsh"):
         diagnostic = compatibility.get(cli_id)
+        if diagnostic is None:
+            print(f"{labels[cli_id]}：未检测到，已跳过")
+            continue
         if not isinstance(diagnostic, dict):
-            raise RuntimeError(f"quickstart compatibility result missing {cli_id}")
-        print(f"{label}：检查通过（{diagnostic['actual_version']}）")
+            raise RuntimeError(f"quickstart compatibility result is invalid for {cli_id}")
+        print(f"{labels[cli_id]}：检查通过（{diagnostic['actual_version']}）")
     print("配置挂载：已就绪")
     print("创建入口：已就绪")
     print("完整性检查：通过")
@@ -428,6 +452,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "doctor":
             result = check_library_contents(arguments.library)
             _emit({"proof": "PAL_LIBRARY_HEALTHY", **result})
+            return 0
+        if arguments.command == "migrate":
+            result = migrate_library_v2(
+                arguments.library,
+                config_root=arguments.config_root,
+                backup_root=arguments.backup_root,
+                activate=not arguments.no_activate,
+            )
+            _emit(result)
             return 0
         if arguments.command == "compatibility" and arguments.compatibility_command == "check":
             result = detect_cli_compatibility(arguments.cli)

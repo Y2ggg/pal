@@ -21,7 +21,7 @@ from pal.io import (
 from pal.library import doctor_library, initialize_library
 from pal.paths import canonical_init_target, normalize_relative_path
 from pal.platform_support import process_exists
-from pal.schema_catalog import SCHEMA_CATALOG
+from pal.schema_catalog import schema_document
 from pal.web import _WebServer
 
 
@@ -91,11 +91,11 @@ def test_persistent_bytes_and_empty_directory_initialization(tmp_path):
 def test_old_sealed_catalog_remains_readable_and_unmodified(tmp_path):
     root = tmp_path / "old-library"
     initialize_library(root, "legacy")
-    registry_path = root / "schemas/v1/index.json"
+    registry_path = root / "schemas/v2/index.json"
     registry = json.loads(registry_path.read_bytes())
     registry["generated_by_pal_version"] = "0.2.4"
     for entry in registry["schemas"]:
-        schema = SCHEMA_CATALOG[entry["name"]]
+        schema = schema_document(entry["name"])
         path = root / entry["path"]
         path.write_bytes(formatted_json_bytes(schema))
         entry["$id"] = schema["$id"]

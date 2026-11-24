@@ -130,7 +130,7 @@ def test_multifile_adapter_uses_new_projection_without_rewriting_old_bytes(
     old_digest = tree_digest(old_root)
     current = prepare_creation_adapter(library, cli_id, config_root=config)
     assert current["plugin_root"] != legacy["plugin_root"]
-    assert "native-v8" in Path(current["plugin_root"]).parts
+    assert "native-v9" in Path(current["plugin_root"]).parts
     assert tree_digest(old_root) == old_digest
     assert adapters_module._managed_creation_marketplace(Path(legacy["marketplace_root"]), cli_id)
 
@@ -143,7 +143,7 @@ def test_creation_adapter_requires_exact_update_target_and_change_request(
     text = (Path(adapter["plugin_root"]) / "skills/pal-create-skill/SKILL.md").read_text(
         encoding="utf-8"
     )
-    assert adapters_module.CREATION_LAYOUT_VERSION == "native-v8"
+    assert adapters_module.CREATION_LAYOUT_VERSION == "native-v9"
     assert (
         f"{adapters_module.__version__}+{adapters_module.CREATION_ADAPTER_SUFFIX}"
         in json.loads(
@@ -295,11 +295,10 @@ def test_cli_compatibility_gate_accepts_verified_and_probed_newer_versions(
         require_supported_cli_version("claude-code")
 
 
-def test_missing_second_config_mount_blocks_adapter_materialization(tmp_path: Path) -> None:
+def test_no_config_mount_blocks_adapter_materialization(tmp_path: Path) -> None:
     library_root = tmp_path / "library"
     config_root = tmp_path / "config"
     initialize_library(library_root, "incomplete-adapter-library")
-    mount_config(library_root, "claude-code", config_root=config_root)
 
     with pytest.raises(PALError):
         prepare_creation_adapter(library_root, "claude-code", config_root=config_root)

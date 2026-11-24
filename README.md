@@ -9,16 +9,16 @@
 
 沉淀经验，打磨能力，让已有积累持续服务于新的工作。
 
-PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 CLI 中创建、更新和使用，
+PAL 帮你管理一套 Claude Code、Codex 与 DeepSeek Harness 共用的 Skill 库。在熟悉的 CLI 中创建、更新和使用，
 在本地 Web 控制台查看内容、发布、挂载和维护。开发中的修改与正在使用的内容相互独立，
 什么时候发布、什么时候交给 CLI 使用，由你决定。
 
-当前版本 **0.3.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
+当前版本 **0.4.0**，采用 [MIT 许可证](LICENSE)。命令、包名和插件标识统一使用 PAL，
 配置路径使用 PAL 专属目录。
 
 ## 可以做什么
 
-- 在 Claude Code 或 Codex 内创建、更新同一个 Skill，一次形成双端所需的共享或定向产物。
+- 在 Claude Code、Codex 或 DeepSeek Harness 内创建、更新同一个 Skill，一次形成三端所需的共享或定向产物。
 - 保存完整 Skill 目录，包括说明、参考资料、脚本、模板和二进制资源。
 - 对照开发、生产和 CLI 挂载内容，逐项发布、挂载、卸载、放弃修改或删除。
 - 在本地控制台浏览文件，检查安装状态，更新系统创建入口，恢复未完成操作。
@@ -29,14 +29,14 @@ PAL 帮你管理一套 Claude Code 与 Codex 共用的 Skill 库。在熟悉的 
 
 ## 开始使用
 
-先安装并配置 Claude Code 与 Codex。PAL 提供自带 Python 的运行包：从
+先安装并配置 Claude Code、Codex 与 DeepSeek Harness（至少一个；可只使用其中一个）。PAL 提供自带 Python 的运行包：从
 [GitHub Releases](https://github.com/Y2ggg/pal/releases) 下载匹配系统和 CPU 的文件，解压后安装：
 
 | 系统 | 文件 | 安装命令（在解压目录执行） |
 |---|---|---|
-| Windows x64 | `pal-0.3.0-windows-x86_64.zip` | `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
-| macOS Apple Silicon / Intel | `pal-0.3.0-macos-arm64.tar.gz` / `pal-0.3.0-macos-x86_64.tar.gz` | `sh install.sh` |
-| Linux x64 | `pal-0.3.0-linux-x86_64.tar.gz` | `sh install.sh` |
+| Windows x64 | `pal-0.4.0-windows-x86_64.zip` | `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
+| macOS Apple Silicon / Intel | `pal-0.4.0-macos-arm64.tar.gz` / `pal-0.4.0-macos-x86_64.tar.gz` | `sh install.sh` |
+| Linux x64 | `pal-0.4.0-linux-x86_64.tar.gz` | `sh install.sh` |
 
 macOS/Linux 的命令目录为 `~/.local/bin`，请加入 PATH；Windows 安装器设置当前用户 PATH，
 新开终端生效。随后运行 `pal --version` 和 `pal quickstart`。
@@ -46,19 +46,20 @@ macOS/Linux 的命令目录为 `~/.local/bin`，请加入 PATH；Windows 安装�
 安装源码或 wheel；在源码根目录运行 `uv tool install .`，或：
 
 ```sh
-uv tool install ./pal-0.3.0-py3-none-any.whl
+uv tool install ./pal-0.4.0-py3-none-any.whl
 pal quickstart
 ```
 
-Quickstart 询问 Skill 库保存位置并确认，建立库和两端系统创建入口，不要求先创建演示 Skill。
+Quickstart 询问 Skill 库保存位置并确认，建立库和三个目标的系统创建入口，不要求先创建演示 Skill。
 保存位置应是独立的空目录、新路径或已有 PAL 库，不要选择程序源码或普通业务项目目录。
 如果终端找不到 `pal`，运行 `uv tool update-shell` 并重新打开终端。
 
-随后从任意业务目录启动 `claude` 或 `codex`，在会话中调用系统创建入口：
+随后从任意业务目录启动 `claude`、`codex` 或 DeepSeek Harness，在会话中调用系统创建入口：
 
 ```text
 Codex：$pal-create-skill
 Claude Code：/pal:pal-create-skill
+DeepSeek Harness：/pal-create-skill
 ```
 
 例如：“创建一个整理会议笔记的 Skill，附带输出模板，保存到开发库。”更新时说明目标 Skill
@@ -72,7 +73,7 @@ Claude Code：/pal:pal-create-skill
 |---|---|---|
 | 开发库 | “创建／更新这个 Skill” | 保存修改，生产和 CLI 保持原内容 |
 | 生产库 | “发布这个 Skill” | 保存可交付内容，CLI 保持原内容 |
-| CLI 挂载库 | “把这个 Skill 同步到 CLI” | 将所选生产内容安装到两端 |
+| CLI 挂载库 | “把这个 Skill 同步到 CLI” | 将所选生产内容安装到已安装的目标 CLI |
 
 可以明确要求“发布并同步这个 Skill”；此前主动卸载的 Skill 需要明确要求“重新挂载”。
 也可以打开管理界面逐项操作：
@@ -82,8 +83,8 @@ pal web
 ```
 
 默认地址为 `http://127.0.0.1:8787/`，服务占用当前终端。同步后**新开 CLI 会话**，从 CLI 的
-Skill 列表选择实际调用名。常见格式为 `pal-<库ID>:<SkillID>`，Codex 前加 `$`，Claude Code
-前加 `/`；库 ID 不一定等于文件夹名，详见[使用手册](docs/USER-GUIDE.md)。旧会话不会热加载。
+Skill 列表选择实际调用名。常见格式为 Claude Code 的 `pal-<库ID>:<SkillID>`、Codex 的
+`$pal-<库ID>:<SkillID>`、DeepSeek Harness 的 `/SkillID`；库 ID 不一定等于文件夹名，详见[使用手册](docs/USER-GUIDE.md)。旧会话不会热加载。
 
 - **从 CLI 卸载**保留开发和生产内容，之后可重新挂载。
 - **放弃未发布修改**将开发内容恢复到当前生产版。
@@ -92,14 +93,18 @@ Skill 列表选择实际调用名。常见格式为 `pal-<库ID>:<SkillID>`，Co
 卸载不会撤回旧会话已加载的内容，请新开会话确认已停止使用。
 
 Web 支持详情与文件浏览、夜间模式、窄屏和统一操作反馈。它不执行 Skill，也不提供任意历史
-回退或批量发布。完整性检查验证三层内容，安装监测另行核查两端；Skill 的实际效果仍需在 CLI
-任务中检验。
+回退或批量发布。完整性检查验证三层内容，安装监测另行核查三个目标；Skill 的实际效果仍需在 CLI
+任务中检验。DeepSeek Harness 使用文件系统技能根，不提供 `pal run` 运行证据。
 
 ## 升级与关闭
 
 如果 Web 正在运行，先在另一终端执行 `pal web stop`；没有运行则跳过停止步骤。
 运行包用户解压新版，再运行其安装脚本。uv 用户在下载的新源码根目录安装，
 或将 `.` 换成本地新版 wheel 路径：
+
+0.3.0 库升级到 0.4.0 需要一次性迁移：`pal migrate --library <库目录>`。迁移会先完整备份
+库与 PAL 配置，再新增三目标 revision/release；旧记录和旧生产版本保持原字节可读。
+旧库在迁移前会被 doctor 拒绝，不会静默改写。
 
 运行包升级须沿用原安装目录和命令目录；使用过自定义目录时继续传入原
 `PAL_INSTALL_DIR`/`PAL_BIN_DIR`，Windows 继续使用原 `-InstallDir`。需要迁移位置时，先从原

@@ -11,11 +11,18 @@ Traceability: PRD-MOUNT-003, PRD-MOUNT-004; ACC-008, ACC-012.
 
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 from collections.abc import Iterator, Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+# Never let a test write into the developer's real DeepSeek Harness profile.
+# A test that needs DSH creates this directory explicitly.
+os.environ["DSH_HOME"] = str(Path(tempfile.gettempdir()) / "pal-tests-dsh-home-not-created")
 
 BLOCKED_TARGETS = ("claude", "codex")
 BLOCKED_SUBCOMMANDS = (

@@ -217,6 +217,10 @@ def main():
                 with urllib.request.urlopen(url + "api/monitor", timeout=60) as response:
                     monitoring = json.load(response)
                 for target in monitoring["targets"]:
+                    if target["cli_id"] == "dsh":
+                        assert target["creation"]["state"] == "unavailable", monitoring
+                        assert target["mount"]["state"] == "unavailable", monitoring
+                        continue
                     assert target["creation"]["state"] == "healthy", monitoring
                     assert target["mount"]["state"] == "healthy", monitoring
                 print("PASS: official Claude/Codex system and production plugin installation")

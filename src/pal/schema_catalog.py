@@ -1,7 +1,7 @@
 """Formal PAL JSON Schema catalogs.
 
 The sealed v1 catalog remains byte-identical for existing libraries. New
-libraries materialize the versioned portable-1 catalog in ``schemas/v1``;
+libraries materialize the versioned portable-2 catalog in ``schemas/v2``;
 registry IDs and exact digests distinguish the two complete catalogs.
 Config-root records use a separate
 catalog so extending PAL user configuration never changes existing library
@@ -27,7 +27,9 @@ ID_PATTERN = r"^[a-z0-9][a-z0-9._-]*$"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 RELATIVE_PATH_PATTERN = r"^(?!/)(?!.*(?:^|/)\.\.?(?:/|$))(?!.*//)(?!.*\\)[^\u0000-\u001f]+$"
 ABSOLUTE_PATH_PATTERN = r"^/[^\u0000-\u001f]*$"
-TARGET_CLIS = ["claude-code", "codex"]
+TARGET_CLIS = ["claude-code", "codex", "dsh"]
+LEGACY_TARGET_CLIS = ["claude-code", "codex"]
+TARGET_CLI_SETS = (LEGACY_TARGET_CLIS, TARGET_CLIS)
 SCHEMA_FILENAMES = (
     "library.schema.json",
     "unit.schema.json",
@@ -87,7 +89,7 @@ def _common_defs() -> dict[str, Any]:
         "absolute_path": {"type": "string", "pattern": ABSOLUTE_PATH_PATTERN},
         "timestamp": {"type": "string", "format": "date-time"},
         "cli_id": {"enum": TARGET_CLIS},
-        "target_clis": {"const": TARGET_CLIS},
+        "target_clis": {"enum": [list(item) for item in TARGET_CLI_SETS]},
         "covered_clis": {
             "type": "array",
             "minItems": 1,
@@ -131,6 +133,7 @@ def _library_schema() -> dict[str, Any]:
                 {
                     "claude-code": _ref("reference_list"),
                     "codex": _ref("reference_list"),
+                    "dsh": _ref("reference_list"),
                 },
             ),
         },
@@ -145,6 +148,7 @@ def _library_schema() -> dict[str, Any]:
                 {
                     "claude-code": {"type": "string", "minLength": 1},
                     "codex": {"type": "string", "minLength": 1},
+                    "dsh": {"type": "string", "minLength": 1},
                 },
                 minProperties=1,
             ),
@@ -154,7 +158,7 @@ def _library_schema() -> dict[str, Any]:
     )
     return _schema(
         "library.schema.json",
-        "PAL library manifest v1",
+        "PAL library manifest v2",
         "PRD-P0-001 through PRD-P0-005; ACC-001",
         [
             "schema_version",
@@ -173,20 +177,20 @@ def _library_schema() -> dict[str, Any]:
             "pal_format_version",
         ],
         {
-            "schema_version": {"const": 1},
+            "schema_version": {"const": 2},
             "library_id": _ref("id"),
             "development_root": {"const": "development"},
             "release_root": {"const": "releases"},
             "production_root": {"const": "production"},
             "usage_record_root": {"const": "records/usage"},
-            "schemas_root": {"const": "schemas/v1"},
+            "schemas_root": {"const": "schemas/v2"},
             "schema_registry": _ref("reference"),
-            "target_clis": _ref("target_clis"),
+            "target_clis": {"const": TARGET_CLIS},
             "specifications": specification_set,
             "design_rules": _ref("reference_list"),
-            "capability_profiles": _array(profile_reference, minimum=2) | {"uniqueItems": True},
+            "capability_profiles": _array(profile_reference, minimum=3) | {"uniqueItems": True},
             "created_at": _ref("timestamp"),
-            "pal_format_version": {"const": "1.0"},
+            "pal_format_version": {"const": "2.0"},
         },
     )
 
@@ -406,13 +410,13 @@ def _production_version_schema() -> dict[str, Any]:
             "pal_version",
         ],
         {
-            "schema_version": {"const": 1},
+            "schema_version": {"enum": [1, 2]},
             "production_version_id": _ref("id"),
             "target_clis": _ref("target_clis"),
-            "releases": _array(release_reference, minimum=1) | {"uniqueItems": True},
-            "artifacts": _array(artifact_snapshot, minimum=1) | {"uniqueItems": True},
+            "releases": _array(release_reference) | {"uniqueItems": True},
+            "artifacts": _array(artifact_snapshot) | {"uniqueItems": True},
             "payload_root": _ref("relative_path"),
-            "files": _ref("file_list"),
+            "files": _array(_ref("file_entry")),
             "tree_sha256": _ref("sha256"),
             "composed_at": _ref("timestamp"),
             "pal_version": {"type": "string", "minLength": 1},
@@ -514,8 +518,9 @@ def _config_mount_schema() -> dict[str, Any]:
 
 def _creation_library_binding_schema() -> dict[str, Any]:
     config_mounts = _object(
-        TARGET_CLIS,
+        [],
         {cli_id: _ref("absolute_reference") for cli_id in TARGET_CLIS},
+        minProperties=1,
     )
     return _schema(
         "creation-library-binding.schema.json",
@@ -580,18 +585,18 @@ def _production_mount_schema() -> dict[str, Any]:
             "verified_at",
         ],
         {
-            "schema_version": {"const": 1},
+            "schema_version": {"enum": [1, 2]},
             "mount_kind": {"const": "production"},
             "record_kind": {"enum": ["bundle", "cli"]},
             "mount_id": _ref("id"),
             "library_id": _ref("id"),
             "production_version_id": _ref("id"),
             "production_manifest_sha256": _ref("sha256"),
-            "cli_records": _array(cli_record, minimum=2) | {"maxItems": 2, "uniqueItems": True},
+            "cli_records": _array(cli_record, minimum=1) | {"maxItems": 3, "uniqueItems": True},
             "cli_id": _ref("cli_id"),
             "cli_version": {"type": "string", "minLength": 1},
-            "releases": _array(release_link, minimum=1) | {"uniqueItems": True},
-            "artifacts": _array(artifact_link, minimum=1) | {"uniqueItems": True},
+            "releases": _array(release_link) | {"uniqueItems": True},
+            "artifacts": _array(artifact_link) | {"uniqueItems": True},
             "projection_root": _ref("absolute_path"),
             "projection_tree_sha256": _ref("sha256"),
             "effective_on": {"const": "new-session"},
@@ -691,8 +696,9 @@ def _production_transition_schema() -> dict[str, Any]:
             "old_active_sha256": _ref("sha256"),
             "new_active_sha256": _ref("sha256"),
             "clis": _object(
-                TARGET_CLIS,
-                {"claude-code": cli_state, "codex": cli_state},
+                [],
+                {cli_id: cli_state for cli_id in TARGET_CLIS},
+                minProperties=2,
             ),
             "recovery_action": {"enum": ["restore-old", "complete-target", "none"]},
             "created_at": _ref("timestamp"),
@@ -958,6 +964,7 @@ def _capability_profile_schema() -> dict[str, Any]:
                 {
                     "claude-code": {"type": "string", "minLength": 1},
                     "codex": {"type": "string", "minLength": 1},
+                    "dsh": {"type": "string", "minLength": 1},
                 },
                 minProperties=1,
             ),
@@ -1158,31 +1165,13 @@ CONFIG_ROOT_SCHEMA_CATALOG: dict[str, dict[str, Any]] = {
 }
 
 
-def _v2_production_schemas() -> dict[str, dict[str, Any]]:
-    result = {}
-    for filename in ("production-version.schema.json", "production-mount.schema.json"):
-        schema = deepcopy(SCHEMA_CATALOG[filename])
-        schema["$id"] = schema["$id"].replace("/v1/", "/v2/")
-        schema["title"] = schema["title"].replace("v1", "v2")
-        schema["properties"]["schema_version"] = {"const": 2}
-        for field in ("releases", "artifacts"):
-            schema["properties"][field].pop("minItems", None)
-        schema["$defs"]["file_list"].pop("minItems", None)
-        result[filename] = schema
-    return result
-
-
-# Existing library foundations remain byte-identical.
-V2_SCHEMA_CATALOG = _v2_production_schemas()
-
-
 # Versioned additive path dialect. Never rewrite a library's sealed v1 catalog.
 PORTABLE_ABSOLUTE_PATH_PATTERN = r"^(?:/[^\u0000-\u001f]*|[A-Za-z]:[\\/][^\u0000-\u001f]*)$"
 
 
 def _portable_schema(schema: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(schema)
-    result["$id"] = result["$id"].replace("/schemas/", "/schemas/portable-1/")
+    result["$id"] = result["$id"].replace("/schemas/", "/schemas/portable-2/")
     result["$defs"]["absolute_path"]["pattern"] = PORTABLE_ABSOLUTE_PATH_PATTERN
     return result
 
@@ -1205,7 +1194,7 @@ def check_catalog() -> None:
         if identifier in identifiers:
             raise SchemaValidationError(f"duplicate formal schema ID: {identifier}")
         identifiers.add(identifier)
-    for filename, schema in (CONFIG_ROOT_SCHEMA_CATALOG | V2_SCHEMA_CATALOG).items():
+    for filename, schema in CONFIG_ROOT_SCHEMA_CATALOG.items():
         try:
             Draft202012Validator.check_schema(schema)
         except SchemaError as exc:
@@ -1235,8 +1224,6 @@ def schema_digest(filename: str) -> str:
 
 def validate_instance(filename: str, instance: Any) -> None:
     schema = schema_document(filename)
-    if isinstance(instance, dict) and instance.get("schema_version") == 2:
-        schema = _portable_schema(V2_SCHEMA_CATALOG.get(filename, schema))
     try:
         Draft202012Validator(schema, format_checker=FormatChecker()).validate(instance)
     except ValidationError as exc:

@@ -142,6 +142,7 @@ def setup_context(tmp_path: Path, library_id: str) -> tuple[Path, Path]:
     initialize_library(library_root, library_id)
     mount_config(library_root, "claude-code", config_root=config_root)
     mount_config(library_root, "codex", config_root=config_root)
+    mount_config(library_root, "dsh", config_root=config_root)
     return library_root, config_root
 
 
@@ -149,8 +150,9 @@ def write_request(
     path: Path,
     unit_id: str,
     *,
-    claude_profile: str = "skill-md-v1-basic",
-    codex_profile: str = "skill-md-v1-basic",
+    claude_profile: str = "skill-md-v1-shared",
+    codex_profile: str = "skill-md-v1-shared",
+    dsh_profile: str = "skill-md-v1-shared",
 ) -> None:
     request = {
         "schema_version": 1,
@@ -159,6 +161,7 @@ def write_request(
         "profile_by_cli": {
             "claude-code": claude_profile,
             "codex": codex_profile,
+            "dsh": dsh_profile,
         },
     }
     path.write_bytes(formatted_json_bytes(request))
@@ -223,7 +226,7 @@ def test_native_cli_creation_resolves_quickstart_default_without_pal_environment
     assert doctor_library(library_root)["active_production_version_id"] is None
 
 
-@pytest.mark.parametrize("created_by_cli", ["claude-code", "codex"])
+@pytest.mark.parametrize("created_by_cli", ["claude-code", "codex", "dsh"])
 def test_acc_003_004_005_shared_creation_commits_one_cross_cli_artifact(
     tmp_path: Path,
     created_by_cli: str,
@@ -245,12 +248,13 @@ def test_acc_003_004_005_shared_creation_commits_one_cross_cli_artifact(
     assert set(opened["context"]["references"]["cli_specifications"]) == {
         "claude-code",
         "codex",
+        "dsh",
     }
     assert opened["context"]["references"]["common_specifications"]
     assert opened["context"]["references"]["design_rules"]
     candidate = opened["candidates"][0]
-    assert candidate["profile_id"] == "skill-md-v1-basic"
-    assert candidate["covered_clis"] == ["claude-code", "codex"]
+    assert candidate["profile_id"] == "skill-md-v1-shared"
+    assert candidate["covered_clis"] == ["claude-code", "codex", "dsh"]
     Path(candidate["skill_path"]).write_text(basic_skill(unit_id), encoding="utf-8")
 
     committed = commit_creation(
@@ -261,16 +265,16 @@ def test_acc_003_004_005_shared_creation_commits_one_cross_cli_artifact(
     assert committed["unit_id"] == unit_id
     assert committed["idempotent"] is False
     assert len(committed["artifacts"]) == 1
-    assert committed["artifacts"][0]["covered_clis"] == ["claude-code", "codex"]
+    assert committed["artifacts"][0]["covered_clis"] == ["claude-code", "codex", "dsh"]
 
     unit_root = library_root / "development/units" / unit_id
     unit = json.loads((unit_root / "unit.json").read_text(encoding="utf-8"))
     revision_root = unit_root / "revisions" / unit["current_revision_id"]
     revision = json.loads((revision_root / "revision.json").read_text(encoding="utf-8"))
     assert revision["created_by_cli"] == created_by_cli
-    assert revision["target_clis"] == ["claude-code", "codex"]
+    assert revision["target_clis"] == ["claude-code", "codex", "dsh"]
     assert len(revision["artifacts"]) == 1
-    assert len(revision["specification_refs"]) == 4
+    assert len(revision["specification_refs"]) == 5
     assert len(revision["profile_refs"]) == 1
 
     transaction = json.loads(
@@ -313,7 +317,7 @@ def test_acc_006_directed_creation_commits_two_disjoint_profile_artifacts(
     Path(by_profile["skill-md-v1-claude-model-pinned"]["skill_path"]).write_text(
         model_skill("directed-skill"), encoding="utf-8"
     )
-    Path(by_profile["skill-md-v1-basic"]["skill_path"]).write_text(
+    Path(by_profile["skill-md-v1-shared"]["skill_path"]).write_text(
         basic_skill("directed-skill"), encoding="utf-8"
     )
 
@@ -324,9 +328,9 @@ def test_acc_006_directed_creation_commits_two_disjoint_profile_artifacts(
     )
     assert len(committed["artifacts"]) == 2
     coverage = [cli for artifact in committed["artifacts"] for cli in artifact["covered_clis"]]
-    assert coverage == ["claude-code", "codex"]
+    assert coverage == ["claude-code", "codex", "dsh"]
     assert {artifact["profile_id"] for artifact in committed["artifacts"]} == {
-        "skill-md-v1-basic",
+        "skill-md-v1-shared",
         "skill-md-v1-claude-model-pinned",
     }
 
