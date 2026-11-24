@@ -43,6 +43,7 @@ from .paths import (
 )
 from .platform_support import is_link, move_path
 from .schema_catalog import TARGET_CLIS, validate_instance
+from .target_set import normalize_target_clis, require_complete_coverage
 
 
 def _file_entries(root: Path) -> list[dict[str, str]]:
@@ -201,6 +202,7 @@ def _validate_coverage(
     plugin_id: str,
     artifacts: Sequence[dict[str, Any]],
     label: str,
+    target_clis: Sequence[str] | None,
 ) -> None:
     artifact_ids: set[str] = set()
     domain_artifacts: list[dict[str, Any]] = []
@@ -211,7 +213,7 @@ def _validate_coverage(
             raise IntegrityError(f"{label} contains a duplicate artifact ID")
         artifact_ids.add(artifact["artifact_id"])
         domain_artifacts.append(artifact)
-    decode_format_v1_plugin(plugin_id, domain_artifacts)
+    decode_format_v1_plugin(plugin_id, domain_artifacts, target_clis)
 
 
 def _load_development_revision(
@@ -241,8 +243,9 @@ def _load_development_revision(
     validate_instance("development-revision.schema.json", revision)
     if revision["unit_id"] != unit_id or revision["revision_id"] != revision_id:
         raise IntegrityError("development revision identity mismatch")
-    if revision["target_clis"] != TARGET_CLIS:
-        raise IntegrityError("development revision target CLI set mismatch")
+    revision_targets = normalize_target_clis(
+        revision["target_clis"], "development revision target_clis"
+    )
 
     artifacts: list[dict[str, Any]] = []
     for reference in revision["artifacts"]:
@@ -267,7 +270,7 @@ def _load_development_revision(
         if item["artifact"]["kind"] != unit_driver.type_id:
             raise IntegrityError("development component type differs from its format-v1 Plugin")
         artifacts.append(item)
-    _validate_coverage(unit_id, artifacts, "development revision")
+    _validate_coverage(unit_id, artifacts, "development revision", revision_targets)
     return {
         "unit_id": unit_id,
         "revision_id": revision_id,
@@ -350,7 +353,6 @@ def _validate_release_at(
     expected_source_path = f"development/units/{unit_id}/revisions/{revision_id}/revision.json"
     if release["source_revision"]["manifest"]["path"] != expected_source_path:
         raise IntegrityError("release source revision reference path mismatch")
-
     payload_root = require_inside(release_root, release["payload_root"], "release payload root")
     files = _validate_inventory(
         payload_root,
@@ -389,7 +391,7 @@ def _validate_release_at(
             if snapshot[field] != artifact[field]:
                 raise IntegrityError(f"release artifact snapshot field drifted: {field}")
         artifacts.append(item)
-    _validate_coverage(unit_id, artifacts, f"release {release_id}")
+    _validate_coverage(unit_id, artifacts, f"release {release_id}", None)
 
     dependencies = sorted(
         [
@@ -592,9 +594,12 @@ def _find_release(root: Path, release_id: str) -> dict[str, Any]:
     return _validate_release_at(root, matches[0], expected_release_id=release_id)
 
 
-def _production_fingerprint(releases: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def _production_fingerprint(
+    releases: Sequence[dict[str, Any]],
+    target_clis: Sequence[str] | None = None,
+) -> dict[str, Any]:
     return {
-        "target_clis": TARGET_CLIS,
+        "target_clis": list(target_clis) if target_clis is not None else TARGET_CLIS,
         "releases": [
             {
                 "unit_id": item["unit_id"],
@@ -616,8 +621,12 @@ def _production_fingerprint(releases: Sequence[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _production_version_id(releases: Sequence[dict[str, Any]], schema_version: int = 2) -> str:
-    fingerprint = _production_fingerprint(releases)
+def _production_version_id(
+    releases: Sequence[dict[str, Any]],
+    target_clis: Sequence[str] | None = None,
+    schema_version: int = 2,
+) -> str:
+    fingerprint = _production_fingerprint(releases, target_clis)
     if schema_version == 2:
         fingerprint["schema_version"] = 2
     digest = sha256_bytes(canonical_json_bytes(fingerprint))
@@ -639,8 +648,11 @@ def _validate_production_at(
     version_id = require_safe_id(production["production_version_id"], "production version ID")
     if expected_version_id is not None and version_id != expected_version_id:
         raise IntegrityError("production version identity mismatch")
-    if version_root.name != version_id or production["target_clis"] != TARGET_CLIS:
-        raise IntegrityError("production version directory or target CLI identity mismatch")
+    production_targets = normalize_target_clis(
+        production["target_clis"], "production version target_clis"
+    )
+    if version_root.name != version_id:
+        raise IntegrityError("production version directory identity mismatch")
 
     payload_root = require_inside(version_root, production["payload_root"], "production payload")
     _validate_inventory(
@@ -688,6 +700,10 @@ def _validate_production_at(
 
     if [item["artifact_id"] for item in production["artifacts"]] != expected_artifact_order:
         raise IntegrityError("production artifacts are not in canonical release order")
+    if production["releases"]:
+        require_complete_coverage(
+            production["artifacts"], production_targets, f"production version {version_id}"
+        )
 
     seen_artifacts: set[str] = set()
     for snapshot in production["artifacts"]:
@@ -720,7 +736,10 @@ def _validate_production_at(
         component_type_driver(artifact["kind"]).validate_payload(artifact, artifact_payload)
     if seen_artifacts != set(expected_artifacts):
         raise IntegrityError("production artifact set differs from its release closure")
-    if _production_version_id(releases, production["schema_version"]) != version_id:
+    if (
+        _production_version_id(releases, production["target_clis"], production["schema_version"])
+        != version_id
+    ):
         raise IntegrityError("production content-addressed ID mismatch")
     return {
         "production": production,
@@ -819,7 +838,15 @@ def compose_production(library_root: Path, release_ids: Sequence[str]) -> dict[s
     if len(artifact_ids) != len(set(artifact_ids)):
         raise ProductionError("production releases contain duplicate artifact IDs")
 
-    version_id = _production_version_id(releases)
+    library = load_json_object(require_inside(root, "library.json", "library manifest"))
+    target_clis = normalize_target_clis(library["target_clis"], "library target_clis")
+    if releases:
+        require_complete_coverage(
+            [artifact["artifact"] for release in releases for artifact in release["artifacts"]],
+            target_clis,
+            "production composition",
+        )
+    version_id = _production_version_id(releases, target_clis)
     versions_root = require_inside(root, "production/versions", "production versions root")
     with library_lock(root, "production-compose", "production composition"):
         target = versions_root / version_id
@@ -884,7 +911,7 @@ def compose_production(library_root: Path, release_ids: Sequence[str]) -> dict[s
             production = {
                 "schema_version": 2,
                 "production_version_id": version_id,
-                "target_clis": TARGET_CLIS.copy(),
+                "target_clis": list(target_clis),
                 "releases": release_references,
                 "artifacts": artifact_snapshots,
                 "payload_root": "payload",
@@ -900,7 +927,9 @@ def compose_production(library_root: Path, release_ids: Sequence[str]) -> dict[s
                 _find_release(root, release["release_id"]) for release in releases
             ]
             confirmed_releases.sort(key=lambda item: item["unit_id"].encode("utf-8"))
-            if _production_fingerprint(confirmed_releases) != _production_fingerprint(releases):
+            if _production_fingerprint(confirmed_releases, target_clis) != _production_fingerprint(
+                releases, target_clis
+            ):
                 raise IntegrityError("release closure changed during production composition")
             move_path(temporary, target)
             fsync_directory(versions_root)

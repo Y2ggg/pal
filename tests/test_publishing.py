@@ -42,6 +42,7 @@ def setup_library(tmp_path: Path, library_id: str) -> tuple[Path, Path]:
     initialize_library(library_root, library_id)
     mount_config(library_root, "claude-code", config_root=config_root)
     mount_config(library_root, "codex", config_root=config_root)
+    mount_config(library_root, "dsh", config_root=config_root)
     return library_root, config_root
 
 
@@ -72,8 +73,11 @@ def commit_unit(
         "unit_id": unit_id,
         "summary": f"Create {unit_id} for publishing tests",
         "profile_by_cli": {
-            "claude-code": ("skill-md-v1-claude-model-pinned" if directed else "skill-md-v1-basic"),
-            "codex": "skill-md-v1-basic",
+            "claude-code": (
+                "skill-md-v1-claude-model-pinned" if directed else "skill-md-v1-shared"
+            ),
+            "codex": "skill-md-v1-shared",
+            "dsh": "skill-md-v1-shared",
         },
     }
     request_path = tmp_path / f"{unit_id}.request.json"
@@ -129,7 +133,7 @@ def test_acc_007_release_and_production_compose_are_immutable_and_idempotent(
     released = create_release(library_root, "published-skill", revision_id)
     assert released["idempotent"] is False
     assert released["release_id"].startswith("release-")
-    assert released["artifacts"][0]["covered_clis"] == ["claude-code", "codex"]
+    assert released["artifacts"][0]["covered_clis"] == ["claude-code", "codex", "dsh"]
     assert (
         validate_release(
             library_root,
@@ -181,7 +185,7 @@ def test_acc_007_directed_release_preserves_two_disjoint_artifacts(tmp_path: Pat
     assert len(released["artifacts"]) == 2
     assert [
         cli_id for artifact in released["artifacts"] for cli_id in artifact["covered_clis"]
-    ] == ["claude-code", "codex"]
+    ] == ["claude-code", "codex", "dsh"]
 
     composed = compose_production(library_root, [released["release_id"]])
     validated = validate_production_version(

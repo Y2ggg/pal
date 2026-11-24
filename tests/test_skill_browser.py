@@ -44,7 +44,10 @@ def browser_library(tmp_path):
 def test_file_inventory_and_http_previews_use_validated_payload(browser_library):
     library, config, details, query = browser_library
     artifacts = details["development"]["artifacts"]
-    assert sorted(a["covered_clis"] for a in artifacts) == [["claude-code"], ["codex"]]
+    assert sorted(a["covered_clis"] for a in artifacts) == [
+        ["claude-code"],
+        ["codex", "dsh"],
+    ]
     files = artifacts[0]["files"]
     assert {f["display_path"] for f in files} == {
         "SKILL.md",

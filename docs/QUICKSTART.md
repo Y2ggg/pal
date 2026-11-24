@@ -3,9 +3,11 @@
 产品名称为 PAL · 个人能力库（Personal Ability Library）；命令、包名、插件调用名和配置路径
 统一使用 PAL 标识。控制台已采用完整 pal 字标和明暗主题标识。
 
-适用：PAL 0.3.0；提供 macOS、Linux 与原生 Windows 运行包。
-需要已安装并配置的 Claude Code 与 Codex；PAL 运行包自带 Python，无需 uv。
-代码最低 CLI 门槛为 Claude Code 2.1.205、Codex 0.147.0；版本达标仍需能力探针通过。
+适用：PAL 0.4.0；提供 macOS、Linux 与原生 Windows 运行包。
+需要已安装并配置的 Claude Code、Codex 或 DeepSeek Harness；至少一个，可只使用其中一个。
+PAL 运行包自带 Python，无需 uv。
+代码最低门槛为 Claude Code 2.1.205、Codex 0.147.0、DeepSeek Harness 0.2.2；
+版本达标仍需能力探针通过。
 
 ## 设置一次
 
@@ -20,21 +22,25 @@ pal quickstart
 ```
 
 源码或 wheel 安装需要 Python 3.11+ 和 uv：源码根目录执行 `uv tool install .`，
-或 `uv tool install ./pal-0.3.0-py3-none-any.whl`。此方式找不到命令时运行 `uv tool update-shell`。
+或 `uv tool install ./pal-0.4.0-py3-none-any.whl`。此方式找不到命令时运行 `uv tool update-shell`。
 平台要求、验证范围、安装位置和卸载见[使用手册](USER-GUIDE.md)。
 
 选择独立的 Skill 库保存位置并确认，不要选择程序源码或普通业务项目目录。已有 PAL 库会复用，
-新路径或空目录会初始化为空库。向导准备两端系统创建入口和默认库绑定；保留检查进度，最终
+新路径或空目录会初始化为空库。向导准备各已安装目标的系统创建入口和默认库绑定；保留检查进度，最终
 显示中文摘要，不创建 Skill、不发布、不改变待同步内容。
 自动化答案模式 `--answers` 继续输出 JSON，详见维护说明。
 设置失败时会列出已完成步骤；修复所报问题后使用相同路径重试，不表示已经完成的安装会自动撤销。
 
+从 0.3.0 升级时，库格式需要执行一次 `pal migrate --library <库目录>`。迁移先备份，
+再生成三目标 revision/release；旧记录和旧生产版本保持原字节可读。
+
 ## 在 CLI 中创建和使用
 
-从任意业务目录运行 `claude` 或 `codex`，调用：
+从任意业务目录运行 `claude`、`codex` 或 DeepSeek Harness，调用：
 
 - Codex：`$pal-create-skill`。
 - Claude Code：`/pal:pal-create-skill`。
+- DeepSeek Harness：`/pal-create-skill`。
 
 告诉 CLI 要创建或更新哪个 Skill。可携带 `references/`、`scripts/`、`assets/` 等完整资源。
 以开发提交成功为保存标志；会话中的草稿不等于已经入库。只要求创建或更新时，保存到开发库；
@@ -43,8 +49,9 @@ pal quickstart
 保持停用，需要明确要求“重新挂载”，或在 Web 点击“挂载到 CLI”。
 
 同步完成后**新开会话**使用生产 Skill。已经打开的会话不会热加载。
-从 CLI 的 Skill 列表选择实际名称，不按文件夹名拼接；常见调用名为 `pal-<库ID>:<SkillID>`，
-Codex 前加 `$`、Claude Code 前加 `/`，命名规则见[使用手册](USER-GUIDE.md)。
+从 CLI 的 Skill 列表选择实际名称，不按文件夹名拼接；Claude Code 常见格式为
+`pal-<库ID>:<SkillID>`，Codex 前加 `$`，DeepSeek Harness 为 `/SkillID`。
+命名规则见[使用手册](USER-GUIDE.md)。
 全库 `pal sync` 会处理所有启用成员及待完成删除，只在你明确需要整个库时使用。
 存在多个库或自定义配置目录时，先按[维护说明](MAINTENANCE.md)明确操作对象；
 Skill 格式限制见[使用手册](USER-GUIDE.md)，不保证任意第三方 Skill 原样导入。
@@ -81,7 +88,7 @@ pal web
 ```
 
 然后在“CLI 与系统”按提示更新创建入口到当前版本，并打开新会话。升级入口不会同步业务 Skill。
-当前入口为 `0.3.0+native.8`；`pal --version` 可查看 PAL 版本和构建。
+当前入口为 `0.4.0+native.9`；`pal --version` 可查看 PAL 版本和构建。
 
 换端口：`pal web --port 8899`；关闭该服务：`pal web stop --port 8899`。
 `--port 0` 自动选端口，`--no-browser` 只启动服务。端口占用会显示当前地址；同库同构建可复用，

@@ -189,6 +189,20 @@ def detect_cli_compatibility(cli_id: str) -> CliCompatibility:
     """Admit one installed target only after every stable-contract probe passes."""
 
     driver = target_driver(cli_id)
+    if cli_id == "dsh":
+        from .targets.dsh import detect_dsh_version, dsh_installed, resolve_dsh_home
+
+        home = resolve_dsh_home()
+        if not dsh_installed(home):
+            raise CompatibilityError(f"DeepSeek Harness home is not configured: {home}")
+        return CliCompatibility(
+            cli_id=cli_id,
+            executable="",
+            actual_version=detect_dsh_version(),
+            minimum_version=driver.minimum_version,
+            classification="filesystem-root",
+            probes=(),
+        )
     version_process = _run([driver.executable_name, "--version"])
     if version_process.returncode != 0:
         detail = version_process.stderr.strip() or version_process.stdout.strip()

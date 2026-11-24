@@ -19,6 +19,7 @@ from . import __version__, adapters
 from . import production_mount as mounts
 from .config_mount import resolve_config_root
 from .errors import IntegrityError, PALError, ProductionError
+from .io import tree_digest
 from .library import load_json_object, utc_now
 from .maintenance import lifecycle_write
 from .paths import canonical_existing_root, validate_regular_tree
@@ -258,10 +259,78 @@ def _read_plan(root: Path, config: Path, library_id: str) -> tuple[dict, mounts.
     return active, plan
 
 
+def _dsh_creation_status(config: Path) -> dict:
+    from .targets.dsh import dsh_skill_root, resolve_dsh_home
+
+    source = (
+        config
+        / "targets"
+        / "creation"
+        / adapters.CREATION_LAYOUT_VERSION
+        / __version__
+        / "dsh"
+        / "skills"
+        / adapters.SKILL_NAME
+    )
+    target = dsh_skill_root(resolve_dsh_home()) / adapters.SKILL_NAME
+    expected = f"{__version__}+{adapters.CREATION_ADAPTER_SUFFIX}"
+    if not source.is_dir():
+        return _result("missing", "系统入口源文件尚未生成。", expected_version=expected)
+    if not target.is_dir():
+        return _result("missing", "DeepSeek Harness 系统入口尚未安装。", expected_version=expected)
+    try:
+        if tree_digest(target) != tree_digest(source):
+            return _result(
+                "drift", "DeepSeek Harness 系统入口内容不一致。", expected_version=expected
+            )
+    except (PALError, OSError) as exc:
+        return _result("drift", f"系统入口校验失败：{exc}", expected_version=expected)
+    return _result(
+        "healthy",
+        "DeepSeek Harness 系统入口文件校验通过。",
+        installed_version=expected,
+        expected_version=expected,
+    )
+
+
+def _dsh_mount_status(plan: mounts.TargetPlan | None) -> dict:
+    if plan is None:
+        return _result("unconfigured", "尚无活动生产版本。")
+    if plan.dsh_home is None:
+        return _result("unavailable", "未检测到 DeepSeek Harness。")
+    units = mounts._dsh_units(plan)
+    if not units:
+        return _result("unconfigured", "当前生产版本没有已挂载 Skill。")
+    for unit, files in sorted(units.items()):
+        target = plan.dsh_home / "skills" / unit
+        if not target.is_dir():
+            return _result("missing", f"DeepSeek Harness 尚未安装 {unit}。", skill_id=unit)
+        try:
+            mounts._verify_files(target, files, f"DSH Skill {unit}")
+        except (PALError, OSError) as exc:
+            return _result("drift", f"DeepSeek Harness Skill {unit} 校验失败：{exc}")
+    return _result("healthy", "DeepSeek Harness 挂载文件校验通过。")
+
+
 def _inspect_target(
     cli_id: str, config: Path, plan: mounts.TargetPlan | None, mount_error: str | None
 ) -> dict:
     result = {"cli_id": cli_id}
+    if cli_id == "dsh":
+        from .targets.dsh import dsh_installed, resolve_dsh_home
+
+        home = resolve_dsh_home()
+        if not dsh_installed(home):
+            message = "未检测到 DeepSeek Harness；安装 DSH 后重新检查。"
+            result.update({kind: _result("unavailable", message) for kind in ("creation", "mount")})
+        else:
+            result["creation"] = _dsh_creation_status(config)
+            result["mount"] = (
+                _result("recovery-required", mount_error)
+                if mount_error
+                else _dsh_mount_status(plan)
+            )
+        return result
     try:
         executable = shutil.which(target_driver(cli_id).executable_name)
         if not executable:
@@ -352,6 +421,15 @@ def _repair_mount(root: Path, config: Path, cli_id: str, expected_version: str) 
         active, plan = _read_plan(root, config, library_id)
         if plan is None or active["active_production_version_id"] != expected_version:
             raise ProductionError("CLI 挂载内容已变化，请刷新后重新确认")
+        if cli_id == "dsh":
+            state = _dsh_mount_status(plan)
+            if state["state"] == "healthy":
+                return
+            if not state["repairable"]:
+                raise ProductionError(state["message"])
+            mounts._install_dsh(plan)
+            mounts._verify_dsh_installed(plan)
+            return
         executable = adapters.require_compatible_cli(cli_id).executable
         state = _mount_status(
             cli_id,

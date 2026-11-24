@@ -36,9 +36,22 @@ def projection(*, marketplace_id: str | None = "pal-market-v1") -> dict[str, Any
 def schema_samples() -> dict[str, dict[str, Any]]:
     common_profile_ref = {
         "profile_id": "skill-md-v1-basic",
-        "covered_clis": TARGET_CLIS.copy(),
+        "covered_clis": ["claude-code", "codex"],
         "cli_versions": {"claude-code": "2.1.234", "codex": "0.147.0"},
         **reference("development/specifications/common/basic.profile.json"),
+    }
+    shared_profile_ref = {
+        "profile_id": "skill-md-v1-shared",
+        "covered_clis": TARGET_CLIS.copy(),
+        "cli_versions": {
+            "claude-code": "2.1.234",
+            "codex": "0.147.0",
+            "dsh": "0.2.2-rc.5",
+        },
+        **reference(
+            "development/specifications/common/shared.profile.json",
+            OTHER_DIGEST,
+        ),
     }
     claude_profile_ref = {
         "profile_id": "skill-md-v1-claude-model-pinned",
@@ -67,14 +80,14 @@ def schema_samples() -> dict[str, dict[str, Any]]:
     }
     samples: dict[str, dict[str, Any]] = {
         "library.schema.json": {
-            "schema_version": 1,
+            "schema_version": 2,
             "library_id": "library-v1",
             "development_root": "development",
             "release_root": "releases",
             "production_root": "production",
             "usage_record_root": "records/usage",
-            "schemas_root": "schemas/v1",
-            "schema_registry": reference("schemas/v1/index.json"),
+            "schemas_root": "schemas/v2",
+            "schema_registry": reference("schemas/v2/index.json"),
             "target_clis": TARGET_CLIS.copy(),
             "specifications": {
                 "common": [reference("development/specifications/common/skill.md")],
@@ -83,12 +96,17 @@ def schema_samples() -> dict[str, dict[str, Any]]:
                         reference("development/specifications/cli/claude-code/skill.md")
                     ],
                     "codex": [reference("development/specifications/cli/codex/skill.md")],
+                    "dsh": [reference("development/specifications/cli/dsh/skill.md")],
                 },
             },
             "design_rules": [reference("development/design-rules/skill.md")],
-            "capability_profiles": [common_profile_ref, claude_profile_ref],
+            "capability_profiles": [
+                common_profile_ref,
+                claude_profile_ref,
+                shared_profile_ref,
+            ],
             "created_at": TIMESTAMP,
-            "pal_format_version": "1.0",
+            "pal_format_version": "2.0",
         },
         "unit.schema.json": {
             "schema_version": 1,

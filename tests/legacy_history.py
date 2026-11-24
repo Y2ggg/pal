@@ -38,7 +38,12 @@ def _cache_inventory(validated, library_id, version):
     parent = _cache_parent(cache_root, library_id, version)
     if not parent.exists():
         return []
-    plugin, _, by_cli = mounts._projection_files(validated, library_id, version["version_id"])
+    plugin, _, by_cli = mounts._projection_files(
+        validated,
+        library_id,
+        version["version_id"],
+        tuple(validated["production"]["target_clis"]),
+    )
     prefix = f"plugins/{plugin}/"
     expected = {
         path.removeprefix(prefix): content for path, content in by_cli["claude-code"].items()

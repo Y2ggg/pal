@@ -20,7 +20,7 @@ Skill 组件。将来新增类型须先验证协议与适配，不通过伪装�
 |---|---|
 | `cli.py`、`quickstart.py` | 命令入口与首次配置 |
 | `library.py`、`integrity.py` | 库骨架、完整内容校验 |
-| `config_mount.py`、`adapters.py`、`creation.py` | 库绑定、双端系统创建入口、创建/更新事务 |
+| `config_mount.py`、`adapters.py`、`creation.py` | 库绑定、三目标系统创建入口、创建/更新事务 |
 | `publishing.py`、`publication.py`、`stages.py` | 不可变发布、生产与挂载选择 |
 | `production_mount.py`、`installation_monitor.py` | 物化、官方安装、修复、监测 |
 | `skill_state.py`、`status.py`、`skill_actions.py` | 共用三层状态及预览/执行/恢复 |
@@ -47,7 +47,7 @@ Markdown 不执行 HTML，文件预览仅从已验证清单读取。访问边界
 
 ## 验证层次
 
-自动化测试覆盖领域动作、schema、路径与故障恢复；浏览器脚本覆盖交互；双端原生模型任务
+自动化测试覆盖领域动作、schema、路径与故障恢复；浏览器脚本覆盖交互；Claude Code/Codex 原生模型任务与 DSH `/` 文件发现分别报告
 验证实际发现和消费。这三个层次分别记录，不互相替代。构建指纹涵盖 Python 源码与直接依赖
 版本，服务启动后冻结，避免磁盘升级让旧进程冒充新版。
 

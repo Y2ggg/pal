@@ -72,7 +72,7 @@ def test_e2e_config_mount_01_acc_002_both_clis_resolve_one_development_context(
     production_before = tree_digest(library_root / "production")
     active_before = sha256_file(library_root / "production" / "active.json")
 
-    for cli_id in ("claude-code", "codex"):
+    for cli_id in ("claude-code", "codex", "dsh"):
         process = run_pal(
             "mount",
             "config",
@@ -91,16 +91,21 @@ def test_e2e_config_mount_01_acc_002_both_clis_resolve_one_development_context(
         assert output["idempotent"] is False
 
     context = resolve_creation_context(library_root, config_root=config_root)
-    assert context["target_clis"] == ["claude-code", "codex"]
+    assert context["target_clis"] == ["claude-code", "codex", "dsh"]
     assert context["library_root"] == str(library_root.resolve())
     assert context["development_root"] == str((library_root / "development").resolve())
     assert context["production_root"] == str((library_root / "production").resolve())
-    assert set(context["profile_ids"]) == {"claude-code", "codex"}
+    assert set(context["profile_ids"]) == {"claude-code", "codex", "dsh"}
     assert context["profile_ids"]["claude-code"] == [
         "skill-md-v1-basic",
         "skill-md-v1-claude-model-pinned",
+        "skill-md-v1-shared",
     ]
-    assert context["profile_ids"]["codex"] == ["skill-md-v1-basic"]
+    assert context["profile_ids"]["codex"] == [
+        "skill-md-v1-basic",
+        "skill-md-v1-shared",
+    ]
+    assert context["profile_ids"]["dsh"] == ["skill-md-v1-shared"]
     assert (
         context["mounts"]["claude-code"]["library_manifest_sha256"]
         == context["library_manifest_sha256"]
@@ -108,6 +113,7 @@ def test_e2e_config_mount_01_acc_002_both_clis_resolve_one_development_context(
     assert (
         context["mounts"]["codex"]["library_manifest_sha256"] == context["library_manifest_sha256"]
     )
+    assert context["mounts"]["dsh"]["library_manifest_sha256"] == context["library_manifest_sha256"]
 
     # Configuration mounting is not a production operation.
     assert tree_digest(library_root / "production") == production_before
@@ -182,12 +188,15 @@ def test_prd_mount_001_acc_012_existing_different_record_is_not_overwritten(
     assert record_path.read_bytes() == before
 
 
-def test_prd_mount_001_acc_012_missing_one_mount_blocks_context_resolution(
+def test_prd_mount_001_acc_012_partial_mounts_resolve_but_no_mount_is_rejected(
     tmp_path: Path,
 ) -> None:
     library_root, config_root = setup_library(tmp_path)
     mount_config(library_root, "claude-code", config_root=config_root)
+    context = resolve_creation_context(library_root, config_root=config_root)
+    assert set(context["mounts"]) == {"claude-code"}
 
+    (config_root / "mounts/config/config-acceptance-library/claude-code.json").unlink()
     with pytest.raises(PALError):
         resolve_creation_context(library_root, config_root=config_root)
 
@@ -296,13 +305,13 @@ def test_program_upgrade_preserves_configuration_mount_and_default_binding(tmp_p
     monkeypatch.setattr(config_mount_module, "__version__", "0.1.0")
     paths = [
         Path(mount_config(library, cli, config_root=config)["path"])
-        for cli in ("claude-code", "codex")
+        for cli in ("claude-code", "codex", "dsh")
     ]
     binding = bind_default_creation_library(library, config_root=config)
     paths.append(Path(binding["path"]))
     before = {p: p.read_bytes() for p in paths}
     monkeypatch.setattr(config_mount_module, "__version__", "0.2.0")
-    for cli in ("claude-code", "codex"):
+    for cli in ("claude-code", "codex", "dsh"):
         assert mount_config(library, cli, config_root=config)["idempotent"]
     assert bind_default_creation_library(library, config_root=config)["idempotent"]
     resolve_default_creation_library(config_root=config)

@@ -6,9 +6,11 @@ from ..errors import CompatibilityError
 from .base import TargetDriver
 from .claude_code import ClaudeCodeTargetDriver
 from .codex import CodexTargetDriver
+from .dsh import DshTargetDriver
 
 _DRIVERS: dict[str, TargetDriver] = {
-    driver.target_id: driver for driver in (ClaudeCodeTargetDriver(), CodexTargetDriver())
+    driver.target_id: driver
+    for driver in (ClaudeCodeTargetDriver(), CodexTargetDriver(), DshTargetDriver())
 }
 
 
