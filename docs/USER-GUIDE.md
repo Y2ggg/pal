@@ -248,9 +248,81 @@ pal web
 - **文件/安装不一致**：按检查结果修复，不绕过摘要或强行标正常。
 - **模型服务报错**：核查 CLI 自身认证或 provider；安装检查通过不保证模型服务可用。
 
-备份时覆盖完整外挂库和 PAL 配置根，并等待写操作结束；恢复到原路径后核查各目标安装，必要时
-修复。备份不包含 CLI 自身认证、会话和外部依赖，不等于回放整个运行环境。
+同机冷备仍可覆盖完整外挂库和 PAL 配置根，并等待写操作结束；恢复到原路径后核查各目标安装。
+
+换机或换库路径使用下面的导出/导入/接管流程。备份不包含 CLI 自身认证、会话和外部依赖，
+不等于回放整个运行环境。
 底层诊断、恢复、退出码与旧受控记录见[维护与兼容命令](MAINTENANCE.md)。以当前版本文档为准。
+
+## 换机、导出与接管
+
+库内容（开发、revision、release、生产版本、记录）全部使用相对路径，可以整库搬到另一台
+机器；配置根（macOS 默认 `~/Library/Application Support/pal`）和三端 CLI 的安装物是
+本机状态，由 quickstart 和 sync 重建，不需要搬运。
+
+```sh
+pal doctor --library <库目录>                          # 导出前先确认库健康
+pal export --library <库目录> --output <库外路径>.tar.gz
+pal import <归档>.tar.gz --library <新库路径>           # 目标不存在：落库并自动接管
+pal import <归档>.tar.gz --library <已有库路径> --replace
+pal adopt --library <库路径>                           # 直接拷贝来的库：只重绑本机指针
+pal sync --library <库路径>                            # 再按需安装到三个目标
+```
+
+- 归档自校验：清单记录逐文件 SHA-256、文件数与树摘要；缺文件、摘要不符、路径逃逸或
+  成员类型异常都会拒绝导入，不会部分落库。
+- 导出先跑完整性检查，并拒绝存在未完成创建/清理事务的库；`.DS_Store`、`.pal/locks` 与
+  在途事务记录不进归档。
+- 导入不会覆盖已存在的目录；`--replace` 先把旧库整体改名为同级备份保留，再做分歧判定：
+  release、production 版本、schema、规范、修订与记录中，凡本机有而归档没有、或同路径
+  内容不同，即判为两台机器各有新发布并拒绝覆盖。
+- `adopt` 只修「本机缺少 projection / mount 安装来源」这一种情况；bundle 已存在但摘要
+  不符仍按真实漂移拒绝，交给诊断与恢复处理。它不改变 active 版本，也不安装到 CLI。
+- 导入后 active 版本与生产内容不变，只改写指向本机配置根的绝对指针；随后 `pal sync`
+  才安装到目标 CLI，`pal doctor` 可复核。
+
+### 用私有 Git 仓同步（推荐长期做法）
+
+把库本身放进一个私有 Git 仓，换机就是 `git clone`，日常就是 `git pull` / `git commit`。
+先在一台机器上准备：
+
+```sh
+pal git-init --library ~/PAL/libraries/my-agent-plugins --remote git@github.com:<你>/pal-library.git
+cd ~/PAL/libraries/my-agent-plugins
+git add -A && git commit -m "chore: track PAL library"
+git push -u origin HEAD
+```
+
+`git-init` 只写两个控制文件，已存在且内容不同时会拒绝而不是覆盖：
+
+- `.gitignore`：忽略 `.DS_Store`、`.pal/locks/` 与 `.pal/transactions/` 的内容。锁文件和
+  在途事务属于本机状态，进仓只会污染历史。
+- `.gitattributes`：`* -text`，禁止 Git 做换行转换。PAL 按字节校验完整性，`core.autocrlf`
+  一旦改写文件，整库校验会失败。
+
+另一台机器需要先装好 PAL 和至少一个目标 CLI（Claude Code / Codex / DSH）：`adopt` 要按
+本机已安装的目标生成挂载记录，`quickstart` 也要求至少一个可用目标。
+
+```sh
+git clone <私有仓 URL> ~/PAL/libraries/my-agent-plugins
+pal adopt --library ~/PAL/libraries/my-agent-plugins   # 重建本机投影并重绑 active 指针
+pal quickstart                                        # 重建配置挂载与创建入口
+pal sync --library ~/PAL/libraries/my-agent-plugins     # 安装到三个 CLI
+```
+
+之后每次切换：`git pull` → `pal adopt`（幂等；路径相同则不改字节）→ `pal status` 看待同步 →
+必要时 `pal sync`。本机有新建或发布时：`pal doctor` → `git add -A && git commit` → `git push`。
+
+- `production/active.json` 是本机挂载指针，也会随库提交。换机器或换配置根后它会被 `adopt`
+  改写，改写后请一并提交；否则下次 `git pull` 可能因本地未提交改动被拒。
+- 冲突时不要强推：先看 `git status` 与 `pal doctor`。`active.json` 或 `current.json` 冲突意味着
+  两台机器各自改过挂载或发布，应先确认哪个生产版本是权威，再用 `pal adopt` + `pal sync` 收敛。
+- 私有仓务必为私有：库里有 Skill 全文与使用记录。配置根（`~/Library/Application Support/pal`）
+  不要进仓，它由 quickstart 重建。
+- git 仓里的 `.git` 目录不参与 `pal export`；导出归档也不包含 VCS 元数据。
+
+两台机器同时或交替使用需要多副本同一性与冲突语义，目前不在承诺范围内；需要时先在产品仓
+立决定，再扩展本节能力。
 
 ## 当前范围
 

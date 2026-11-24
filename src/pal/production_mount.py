@@ -43,7 +43,13 @@ from .io import (
     tree_digest,
     write_new_bytes,
 )
-from .library import doctor_development_context, doctor_library, load_json_object, utc_now
+from .library import (
+    REQUIRED_DIRECTORIES,
+    doctor_development_context,
+    doctor_library,
+    load_json_object,
+    utc_now,
+)
 from .maintenance import lifecycle_write, require_no_cleanup
 from .paths import (
     canonical_existing_root,
@@ -112,6 +118,19 @@ def _mkdir_descendant(path: Path, root: Path) -> None:
                 )
         else:
             cursor.mkdir()
+
+
+def _ensure_local_skeleton(root: Path) -> None:
+    """Create empty required directories that a fresh checkout cannot carry.
+
+    A Git clone (or a copy made by tools that drop empty directories) misses
+    ``records/usage`` and the transaction directories. Creating those empty
+    skeleton directories is safe: every one of them is content-validated by the
+    doctor call that follows, so a genuinely damaged library still fails closed.
+    """
+
+    for relative in REQUIRED_DIRECTORIES:
+        _mkdir_descendant(root / relative, root)
 
 
 def _safe_remove_staging(path: Path, parent: Path, prefix: str) -> None:
@@ -1872,6 +1891,83 @@ def activate_production(
     """Activate one immutable production version for new Claude/Codex sessions."""
 
     return _activate_or_recover(library_root, version_id, config_root=config_root)
+
+
+@lifecycle_write
+def adopt_active_production(
+    library_root: Path,
+    *,
+    config_root: Path | None = None,
+) -> dict[str, Any]:
+    """Re-bind the existing active production version to this machine.
+
+    A copied library keeps relative references only, but its active pointer records
+    an absolute bundle path under the exporting machine's config root. Re-binding is
+    deliberate: it rebuilds machine-local projections/mounts from the immutable
+    production closure and rewrites only that pointer. The active version choice and
+    the production content never change here, and a present-but-drifting bundle is
+    still rejected rather than overwritten.
+    """
+
+    root = canonical_existing_root(library_root)
+    _ensure_local_skeleton(root)
+    context = doctor_development_context(root)
+    library_id = context["library_id"]
+    pal_config_root = resolve_config_root(config_root, create=True)
+    with _activation_lock(pal_config_root, library_id):
+        transition = _transition_path(pal_config_root, library_id)
+        if transition.exists() or is_link(transition):
+            raise ProductionError("存在未完成的 CLI 同步，请先执行异常恢复")
+        active, _ = _read_active(root, library_id)
+        version_id = active["active_production_version_id"]
+        if version_id is None or active["activated_at"] is None:
+            raise ProductionError("库中没有已激活的生产版本，无需接管")
+        validate_production_version(root, version_id)
+        mount_root = (
+            pal_config_root / "mounts" / "production" / library_id / "versions" / version_id
+        )
+        compatibilities = _detect_target_compatibilities()
+        if not mount_root.is_dir() and not compatibilities:
+            raise ProductionError("本机未检测到可用的目标 CLI，无法接管；请先安装任一目标后重试")
+        executables = {
+            cli_id: compatibility.executable for cli_id, compatibility in compatibilities.items()
+        }
+        plan = _build_target_plan(
+            root,
+            pal_config_root,
+            library_id,
+            version_id,
+            activation_time=active["activated_at"],
+            executables=executables,
+            compatibilities=compatibilities,
+        )
+        if plan.active["production_manifest"] != active["production_manifest"]:
+            raise IntegrityError("active production pointer manifest differs from the library")
+        _materialize_plan(plan)
+        changed = plan.active != active
+        if changed:
+            atomic_replace_json(root / "production" / "active.json", plan.active)
+        _validate_stable_active(
+            root,
+            pal_config_root,
+            library_id,
+            verify_installation=False,
+            executables={},
+        )
+        return {
+            "library_id": library_id,
+            "library_root": str(root),
+            "production_version_id": version_id,
+            "previous_bundle": (
+                active["production_mount_bundle"]["path"]
+                if active["production_mount_bundle"] is not None
+                else None
+            ),
+            "bundle": str(plan.mount_root / "bundle.json"),
+            "bundle_sha256": plan.bundle_sha256,
+            "active_pointer_rewritten": changed,
+            "next_action": "pal sync --library <库路径>",
+        }
 
 
 @lifecycle_write

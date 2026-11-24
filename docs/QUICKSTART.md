@@ -95,6 +95,19 @@ pal web
 旧构建提示重启。关闭网页不会停止服务。Web 只接受本机同源访问，不支持远程代理或公开转发。
 自动选端口后，停止时也要填写启动输出的实际端口。
 
+## 换机与备份
+
+旧机器 `pal export --library <库目录> --output <归档>`，新机器
+`pal import <归档> --library <任意库路径>`，再跑 `pal quickstart` 和 `pal sync`。
+导入会自动把已激活的生产版本重新绑定到本机；直接拷贝过去的库则用
+`pal adopt --library <库路径>` 接管。配置根与 CLI 安装物会在本机重建，不需要搬运；库健康、
+归档内容与 `--replace` 的分歧判定以[使用手册](USER-GUIDE.md)为准。
+两台机器同时或交替使用目前不在承诺范围内。
+
+长期做法是把库放进私有 Git 仓：`pal git-init --library <库目录> --remote <URL>` 写好忽略规则
+（锁与在途事务不进仓、禁止换行转换），之后 `git pull` 后执行 `pal adopt`，本机改动正常提交推送。
+换机时 `git clone` 后依次 `pal adopt`、`pal quickstart`、`pal sync`。
+
 分析、评分和日常记录延期。详细说明见[使用手册](USER-GUIDE.md)，底层及旧工具见
 [维护与兼容命令](MAINTENANCE.md)。
 

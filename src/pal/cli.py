@@ -29,10 +29,12 @@ from .creation import (
 )
 from .deletion import recover_deletion
 from .errors import PALError, QuickstartCancelled, QuickstartError, UsageError
+from .git_tracking import prepare_git_tracking
 from .integrity import check_library_contents
 from .library import initialize_library
 from .migration import migrate_library_v2
 from .production_mount import (
+    adopt_active_production,
     launch_production_entry,
     recover_production,
 )
@@ -49,6 +51,7 @@ from .quickstart import (
 )
 from .skill_actions import ACTIONS, execute_skill_action, preview_skill_action, recover_skill_action
 from .status import library_status
+from .transfer import export_library, import_library
 from .usage import (
     recover_usage_transactions,
     run_production_task,
@@ -71,6 +74,8 @@ def _parser() -> argparse.ArgumentParser:
             "创建、更新和使用 Skill。\n"
             "管理：web 打开控制台；publish 手动发布到生产；sync 手动同步到 CLI；"
             "doctor 检查完整性。\n"
+            "换机：export 导出归档；import 在本机落库；adopt 重新绑定已激活生产；"
+            "git-init 准备私有仓跟踪。\n"
             "底层/自动化命令（非日常必经）：init、mount、create、release、skill、production、recover。\n"
             "兼容/诊断：compatibility、launch、run、usage。各命令后加 --help 查看参数。\n"
             "日常记录与评分暂缓；完整性检查不代表 Skill 效果测试。"
@@ -105,6 +110,50 @@ def _parser() -> argparse.ArgumentParser:
         help="检查外挂库完整性（不执行 Skill）",
     )
     doctor.add_argument("--library", required=True, type=Path)
+
+    adopt = commands.add_parser(
+        "adopt",
+        help="把库中已激活的生产版本重新绑定到本机（换机或搬库后使用）",
+    )
+    adopt.add_argument("--library", required=True, type=Path)
+    adopt.add_argument("--config-root", type=Path)
+
+    export = commands.add_parser(
+        "export",
+        help="导出可自校验的库归档（换机、冷备）",
+    )
+    export.add_argument("--library", required=True, type=Path)
+    export.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="归档输出路径；不得位于库目录内",
+    )
+
+    import_command = commands.add_parser(
+        "import",
+        help="从归档在本机落库并接管已激活生产",
+    )
+    import_command.add_argument("archive", type=Path, help="pal export 产出的 tar.gz")
+    import_command.add_argument("--library", required=True, type=Path, help="本机目标库路径")
+    import_command.add_argument("--config-root", type=Path)
+    import_command.add_argument(
+        "--replace",
+        action="store_true",
+        help="目标已存在时整体备份并替换；不可变内容有分歧时仍拒绝",
+    )
+
+    git_init = commands.add_parser(
+        "git-init",
+        help="为库准备私有 Git 仓跟踪（忽略本机状态、禁用换行转换）",
+    )
+    git_init.add_argument("--library", required=True, type=Path)
+    git_init.add_argument("--remote", help="设置 origin 远端 URL；已存在且不同则拒绝")
+    git_init.add_argument(
+        "--commit",
+        action="store_true",
+        help="写入后立即提交一次当前库内容",
+    )
 
     migrate = commands.add_parser(
         "migrate",
@@ -453,6 +502,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = check_library_contents(arguments.library)
             _emit({"proof": "PAL_LIBRARY_HEALTHY", **result})
             return 0
+        if arguments.command == "adopt":
+            root = resolve_library_root(arguments.library, config_root=arguments.config_root)
+            result = adopt_active_production(root, config_root=arguments.config_root)
+            _emit({"proof": "PAL_PRODUCTION_ADOPTED", **result})
+            return 0
+        if arguments.command == "export":
+            result = export_library(arguments.library, arguments.output)
+            _emit({"proof": "PAL_LIBRARY_EXPORTED", **result})
+            return 0
+        if arguments.command == "import":
+            result = import_library(
+                arguments.archive,
+                arguments.library,
+                config_root=arguments.config_root,
+                replace=arguments.replace,
+            )
+            _emit({"proof": "PAL_LIBRARY_IMPORTED", **result})
+            return 0
+        if arguments.command == "git-init":
+            root = resolve_library_root(arguments.library, config_root=None)
+            result = prepare_git_tracking(
+                root,
+                remote=arguments.remote,
+                commit=arguments.commit,
+            )
+            _emit({"proof": "PAL_LIBRARY_GIT_READY", **result})
+            return 0
         if arguments.command == "migrate":
             result = migrate_library_v2(
                 arguments.library,
@@ -739,6 +815,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             proof = "PAL_PRODUCTION_SYNC_REJECTED"
         elif arguments.command == "production":
             proof = f"PAL_PRODUCTION_{arguments.production_command.upper()}_REJECTED"
+        elif arguments.command == "adopt":
+            proof = "PAL_PRODUCTION_ADOPT_REJECTED"
+        elif arguments.command == "export":
+            proof = "PAL_LIBRARY_EXPORT_REJECTED"
+        elif arguments.command == "import":
+            proof = "PAL_LIBRARY_IMPORT_REJECTED"
+        elif arguments.command == "git-init":
+            proof = "PAL_LIBRARY_GIT_REJECTED"
         elif arguments.command == "recover":
             proof = "PAL_PRODUCTION_RECOVERY_REJECTED"
         elif arguments.command == "run":

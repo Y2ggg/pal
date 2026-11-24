@@ -121,6 +121,50 @@ Skill。`pal --version` 显示版本与构建 ID，旧 Web 服务需要重启。
 换端口使用 `pal web --port 8899`；停止时使用 `pal web stop --port 8899`。
 关闭网页不会停止服务。仅供本机使用，不应通过代理、隧道或端口转发公开到网络。
 
+## 换机与备份
+
+库内容只有几 MB 且全部使用相对路径，换机不需要复制配置根。旧机器导出、新机器导入：
+
+```sh
+# 旧机器：库健康时导出（归档不得写进库目录）
+pal doctor --library ~/PAL/libraries/my-agent-plugins
+pal export --library ~/PAL/libraries/my-agent-plugins --output ~/pal-library.tar.gz
+
+# 新机器：落到任意路径，导入后自动接管已激活的生产版本
+pal import ~/pal-library.tar.gz --library ~/PAL/libraries/my-agent-plugins
+pal quickstart                                      # 重建配置挂载、创建入口与默认库
+pal sync --library ~/PAL/libraries/my-agent-plugins   # 按需同步到各目标 CLI
+```
+
+如果库是直接拷贝过去的（rsync、移动硬盘、网盘），先执行
+`pal adopt --library <库路径>` 把 active 指针重新绑定到本机，再 `pal sync`。
+配置根与 CLI 安装物是本机状态，由 quickstart 和 sync 重建，不在归档里。
+
+导出前必须没有进行中的创建、同步或清理；导入默认拒绝覆盖已存在的库，`--replace` 会先做
+不可变区分歧判定，两台机器各有新发布时拒绝覆盖。两台机器同时或交替使用目前不在承诺范围内。
+
+### 用私有 Git 仓同步（长期做法）
+
+```sh
+# 首次：在库目录里准备跟踪规则（可同时设置私有远端）
+pal git-init --library ~/PAL/libraries/my-agent-plugins --remote <私有仓 URL>
+cd ~/PAL/libraries/my-agent-plugins && git add -A && git commit -m "chore: track PAL library"
+git push -u origin HEAD
+
+# 另一台机器（先装好 PAL 和至少一个目标 CLI）
+git clone <私有仓 URL> ~/PAL/libraries/my-agent-plugins
+pal adopt --library ~/PAL/libraries/my-agent-plugins
+pal quickstart && pal sync --library ~/PAL/libraries/my-agent-plugins
+```
+
+`git-init` 只写两个控制文件：`.gitignore` 忽略 `.DS_Store`、`.pal/locks/` 与在途事务；
+`.gitattributes` 用 `* -text` 禁止换行转换——PAL 按字节校验，`core.autocrlf` 会直接弄坏整库。
+
+之后每次切换：`git pull` → `pal adopt`（路径相同则不改字节）→ `pal status` 看待同步 →
+必要时 `pal sync`；本机有新建或发布时先 `pal doctor`，再 `git add -A && git commit && git push`。
+`production/active.json` 也会随库提交，被 `adopt` 改写后请一并提交。冲突时不要强推，
+先确认哪个生产版本是权威。配置根不要进仓。
+
 ## 继续了解
 
 - [快速开始](docs/QUICKSTART.md) · [完整使用手册](docs/USER-GUIDE.md) · [维护命令](docs/MAINTENANCE.md)

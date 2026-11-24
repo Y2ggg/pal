@@ -13,6 +13,7 @@ from pathlib import Path
 from . import locking as fcntl
 from .errors import IntegrityError
 from .paths import canonical_existing_root, require_inside
+from .platform_support import is_link
 
 _held = threading.local()
 
@@ -32,6 +33,18 @@ def require_no_cleanup(root: Path) -> None:
         raise IntegrityError("永久删除尚未完成，请到「库与维护」执行异常恢复，继续清理")
 
 
+def _ensure_lock_root(root: Path) -> None:
+    """Create the lock directory a fresh checkout cannot carry."""
+
+    for relative in (".pal", ".pal/locks"):
+        path = root / relative
+        if path.exists() or is_link(path):
+            if is_link(path) or not path.is_dir():
+                raise IntegrityError(f"{relative} 不是普通目录：{path}")
+        else:
+            path.mkdir(exist_ok=True)
+
+
 @contextmanager
 def maintenance_lock(root: Path, *, exclusive: bool = False, recovery: bool = False):
     if fcntl is None:
@@ -43,6 +56,7 @@ def maintenance_lock(root: Path, *, exclusive: bool = False, recovery: bool = Fa
             raise IntegrityError("不能在普通操作中升级为永久删除")
         yield
         return
+    _ensure_lock_root(root)
     path = require_inside(root, ".pal/locks/maintenance.lock", "维护锁", must_exist=False)
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o644)
     try:

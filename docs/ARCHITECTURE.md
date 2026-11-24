@@ -29,6 +29,7 @@ Skill 组件。将来新增类型须先验证协议与适配，不通过伪装�
 | `locking.py`、`platform_support.py` | POSIX/Windows 文件锁、路径与外部进程边界 |
 | `targets/`、`components/` | CLI 与组件类型驱动 |
 | `usage.py`、`usage_events.py`、`deletion.py`、`production_history.py` | 旧受控记录、清理与历史数据恢复内核 |
+| `transfer.py`、`git_tracking.py` | 库归档导出/导入与本机接管、私有 Git 跟踪准备 |
 
 文件均在 `src/pal/`。旧恢复内核的存在不代表重新提供用户快照或日常评分。
 
