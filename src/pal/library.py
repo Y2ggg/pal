@@ -559,7 +559,10 @@ def _verify_active_pointer(root: Path, library_id: str) -> dict[str, Any]:
         bundle = active["production_mount_bundle"]
         bundle_path = Path(bundle["path"])
         if is_link(bundle_path) or not bundle_path.is_file():
-            raise IntegrityError(f"production mount bundle is unavailable: {bundle_path}")
+            raise IntegrityError(
+                f"production mount bundle is unavailable: {bundle_path}；"
+                f"若这是从另一台机器搬来的库，请在本机执行 pal adopt --library {root}"
+            )
         require_digest(bundle_path, bundle["sha256"], "production mount bundle")
     return active
 
